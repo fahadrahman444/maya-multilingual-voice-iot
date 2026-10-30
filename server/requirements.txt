@@ -14,6 +14,6 @@ edge-tts>=6.1.12
 numpy>=1.26.0
 scipy>=1.13.0
 miniaudio>=1.71.0
-audioop-lts>=0.2.2
+audioop-lts>=0.2.2; python_version >= '3.13'
 webrtcvad-wheels>=2.0.14
 sounddevice>=0.5.0

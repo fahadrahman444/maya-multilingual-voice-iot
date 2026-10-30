@@ -10,6 +10,18 @@ from pathlib import Path
 root_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root_dir))
 
+# Ensure UTF-8 I/O encoding on Windows consoles
+if sys.platform == 'win32':
+    try:
+        if sys.stdin:
+            sys.stdin.reconfigure(encoding='utf-8')
+        if sys.stdout:
+            sys.stdout.reconfigure(encoding='utf-8')
+        if sys.stderr:
+            sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
+
 import numpy as np
 import sounddevice as sd
 from server.app.pipeline.safety import evaluate_crisis_guardrail
