@@ -28,13 +28,17 @@ class Settings:
     SERVER_HOST: str = os.getenv("SERVER_HOST", "0.0.0.0")
     SERVER_PORT: int = int(os.getenv("SERVER_PORT", "8000"))
 
-    # Speech Synthesis (Edge TTS)
+    # Speech Synthesis (Edge TTS) - Permanent Soft / Alluring Female Profile
     TTS_VOICE: str = os.getenv("TTS_VOICE", "bn-BD-NabanitaNeural")
+    TTS_VOICE_BN: str = os.getenv("TTS_VOICE_BN", "bn-BD-NabanitaNeural")
+    TTS_VOICE_EN: str = os.getenv("TTS_VOICE_EN", "en-US-AvaNeural")
+    TTS_PITCH: str = os.getenv("TTS_PITCH", "-3Hz")
+    TTS_RATE: str = os.getenv("TTS_RATE", "-5%")
 
     # Audio & VAD Parameters
     SAMPLE_RATE: int = int(os.getenv("SAMPLE_RATE", "16000"))
     CHANNELS: int = int(os.getenv("CHANNELS", "1"))
-    VAD_SILENCE_SECONDS: float = float(os.getenv("VAD_SILENCE_SECONDS", "1.0"))
+    VAD_SILENCE_SECONDS: float = float(os.getenv("VAD_SILENCE_SECONDS", "1.65"))
 
     def validate_keys(self) -> dict[str, bool]:
         """Check presence of required API keys."""

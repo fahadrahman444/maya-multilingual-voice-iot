@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import io
 import os
 import sys
@@ -24,6 +25,8 @@ if sys.platform == 'win32':
 
 import numpy as np
 import sounddevice as sd
+import webrtcvad
+
 from server.app.pipeline.safety import evaluate_crisis_guardrail
 from server.app.pipeline.brain import brain_engine
 from server.app.pipeline.stt import stt_client
@@ -31,6 +34,18 @@ from server.app.pipeline.tts import synthesize_speech_pcm
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
+
+# VAD parameters for comfortable conversational breathing room
+VAD_AGGRESSIVENESS = 1  # 1: forgiving mode (avoids cutting off soft syllables/pauses)
+FRAME_MS = 30  # WebRTC VAD supports 10, 20, or 30ms frames
+FRAME_SIZE = int(SAMPLE_RATE * FRAME_MS / 1000)  # 480 samples
+PRE_ROLL_FRAMES = 15  # ~450ms pre-speech buffer to prevent word clipping
+
+# Generous silence threshold: ~1.65 seconds pause before MAYA assumes you finished talking
+SILENCE_PAUSE_SECONDS = 1.65
+SILENCE_FRAMES_THRESHOLD = int(SILENCE_PAUSE_SECONDS * 1000 / FRAME_MS)  # ~55 frames
+MIN_SPEECH_FRAMES = 12  # ~360ms minimum speech length to filter tiny background clicks
+MIN_RMS_THRESHOLD = 180.0  # Sensitive floor to catch soft whispers and sentence endings
 
 
 def play_pcm_audio(pcm_bytes: bytes, sample_rate: int = SAMPLE_RATE):
@@ -42,9 +57,58 @@ def play_pcm_audio(pcm_bytes: bytes, sample_rate: int = SAMPLE_RATE):
     sd.wait()
 
 
+def record_continuous_vad() -> bytes:
+    """Passively listen until speech is detected, record until natural silence pause, and return PCM audio."""
+    vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
+    pre_roll = collections.deque(maxlen=PRE_ROLL_FRAMES)
+    speech_chunks = []
+    is_speaking = False
+    consecutive_silence = 0
+
+    print("\n🎧 [LISTENING...] Speak naturally (or Ctrl+C to quit)...", end="", flush=True)
+
+    with sd.RawInputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=FRAME_SIZE) as stream:
+        while True:
+            frame, _ = stream.read(FRAME_SIZE)
+            frame_bytes = bytes(frame)
+
+            # Check RMS energy to ensure sufficient audio volume
+            audio_array = np.frombuffer(frame_bytes, dtype=np.int16)
+            rms = np.sqrt(np.mean(np.square(audio_array.astype(np.float32))))
+
+            # Determine whether current 30ms chunk contains voice
+            is_speech_frame = (rms >= MIN_RMS_THRESHOLD) and vad.is_speech(frame_bytes, SAMPLE_RATE)
+
+            if not is_speaking:
+                pre_roll.append(frame_bytes)
+                if is_speech_frame:
+                    is_speaking = True
+                    consecutive_silence = 0
+                    speech_chunks = list(pre_roll)
+                    print("\n🎤 [HEARING YOU...] ", end="", flush=True)
+            else:
+                speech_chunks.append(frame_bytes)
+                if not is_speech_frame:
+                    consecutive_silence += 1
+                    # Only finalize after the user has paused for ~1.65 full seconds
+                    if consecutive_silence >= SILENCE_FRAMES_THRESHOLD:
+                        if len(speech_chunks) >= MIN_SPEECH_FRAMES:
+                            print("[Done]")
+                            return b"".join(speech_chunks)
+                        else:
+                            # Too short to be actual speech (likely click or cough)
+                            is_speaking = False
+                            speech_chunks.clear()
+                            consecutive_silence = 0
+                            print("\r🎧 [LISTENING...] Speak naturally...", end="", flush=True)
+                else:
+                    # User resumed speaking; reset the silence counter
+                    consecutive_silence = 0
+
+
 def record_microphone_until_enter() -> bytes:
-    """Record audio from the microphone until the user presses Enter."""
-    print("\n🎤 [LISTENING...] Speak into your microphone now (Press Enter when done)...", end="", flush=True)
+    """Record audio from the microphone until the user presses Enter (Manual Push-to-Talk)."""
+    print("\n🎤 [MANUAL RECORDING...] Speak now (Press Enter when done)...", end="", flush=True)
     recorded_chunks = []
     stop_recording = False
 
@@ -102,28 +166,31 @@ async def process_user_turn(user_text: str):
 
 async def main():
     print("=" * 65)
-    print("       MAYA: Multilingual Bangla AI Voice Assistant")
+    print("       MAYA: Multilingual AI Voice Assistant (Bangla & English)")
     print("=" * 65)
-    print("1. [V] Voice Mode (Speak into your laptop microphone)")
+    print("1. [V] Hands-Free Voice Mode (Speak naturally, auto silence detection) [Default]")
     print("2. [T] Text Mode (Type in terminal, listen to spoken reply)")
+    print("3. [M] Manual Push-to-Talk Mode (Press Enter to start/stop)")
     print("=" * 65)
 
-    mode = input("Select mode (V for Voice / T for Text) [default: V]: ").strip().lower()
+    mode = input("Select mode (V / T / M) [default: V]: ").strip().lower()
+
     if mode == "t":
         print("\n[TEXT MODE] Type your message in Bangla or English (or 'exit' to quit):")
         while True:
             try:
                 user_msg = input("\nType message: ").strip()
                 if user_msg.lower() in ["exit", "quit", "q"]:
-                    print("বিদায়! ভালো থাকবেন।")
+                    print("Goodbye! / বিদায়! ভালো থাকবেন।")
                     break
                 if not user_msg:
                     continue
                 await process_user_turn(user_msg)
             except (KeyboardInterrupt, EOFError):
                 break
-    else:
-        print("\n[VOICE MODE] Press Enter to begin speaking, and Enter again to finish.")
+
+    elif mode == "m":
+        print("\n[MANUAL PUSH-TO-TALK MODE]")
         while True:
             try:
                 input("\n👉 Press [ENTER] to start speaking (or Ctrl+C to quit)...")
@@ -133,7 +200,7 @@ async def main():
                     print("⚠️ Audio too short. Please speak for at least 1 second.")
                     continue
 
-                print("⏳ Transcribing Bangla speech via Groq Whisper...")
+                print("⏳ Transcribing speech via Groq Whisper...")
                 t_stt_start = time.perf_counter()
                 transcribed_text = await stt_client.transcribe_pcm(pcm_bytes)
                 t_stt = time.perf_counter() - t_stt_start
@@ -145,7 +212,36 @@ async def main():
 
                 await process_user_turn(transcribed_text)
             except KeyboardInterrupt:
-                print("\n\nবিদায়! ভালো থাকবেন।")
+                print("\n\nGoodbye! / বিদায়! ভালো থাকবেন।")
+                break
+
+    else:
+        # Default: Continuous Hands-Free VAD with generous conversational pause tolerance
+        print("\n✨ [HANDS-FREE VOICE MODE ACTIVATED]")
+        print("   • Speak naturally in Bangla or English.")
+        print("   • Pause tolerance: ~1.65 seconds (you can pause/think without being interrupted).")
+        print("   • No keyboard input needed! (Press Ctrl+C anytime to exit)\n")
+
+        while True:
+            try:
+                pcm_bytes = record_continuous_vad()
+
+                if not pcm_bytes or len(pcm_bytes) < (SAMPLE_RATE * 2 * 0.4):
+                    continue
+
+                print("⏳ Transcribing speech via Groq Whisper...")
+                t_stt_start = time.perf_counter()
+                transcribed_text = await stt_client.transcribe_pcm(pcm_bytes)
+                t_stt = time.perf_counter() - t_stt_start
+                print(f"   Transcribed in {t_stt*1000:.1f}ms: '{transcribed_text}'")
+
+                if not transcribed_text or not transcribed_text.strip():
+                    continue
+
+                await process_user_turn(transcribed_text)
+
+            except KeyboardInterrupt:
+                print("\n\nGoodbye! / বিদায়! ভালো থাকবেন।")
                 break
 
 

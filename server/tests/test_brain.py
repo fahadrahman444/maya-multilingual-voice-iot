@@ -7,6 +7,16 @@ from pathlib import Path
 root_dir = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(root_dir))
 
+# Ensure UTF-8 I/O encoding on Windows consoles
+if sys.platform == 'win32':
+    try:
+        if sys.stdout:
+            sys.stdout.reconfigure(encoding='utf-8')
+        if sys.stderr:
+            sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
+
 from server.app.pipeline.safety import evaluate_crisis_guardrail
 from server.app.pipeline.brain import brain_engine
 
@@ -34,8 +44,8 @@ async def main():
     print("MAYA: Testing Step 3 - Crisis Guardrail & Empathetic Cognitive Brain")
     print("=" * 65)
 
-    # Test 1: Polite everyday greeting
-    await test_turn("নমস্কার মায়া, আপনি কেমন আছেন?")
+    # Test 1: Polite Islamic Salam greeting
+    await test_turn("আসসালামু আলাইকুম মায়া, আপনি কেমন আছেন?")
 
     # Test 2: Sadness / Work burnout (Emotional validation)
     await test_turn("আজকের দিনটা খুব খারাপ গেল, মন খুব ক্লান্ত লাগছে...")

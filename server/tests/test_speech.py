@@ -7,6 +7,16 @@ from pathlib import Path
 root_dir = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(root_dir))
 
+# Ensure UTF-8 I/O encoding on Windows consoles
+if sys.platform == 'win32':
+    try:
+        if sys.stdout:
+            sys.stdout.reconfigure(encoding='utf-8')
+        if sys.stderr:
+            sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass
+
 from server.app.pipeline.tts import synthesize_speech_mp3, synthesize_speech_pcm
 from server.app.pipeline.stt import stt_client
 from server.app.config import settings
@@ -17,7 +27,7 @@ async def main():
     print("MAYA: Testing Step 2 - Bangla Speech Pipeline (STT & TTS)")
     print("=" * 60)
 
-    test_sentence = "নমস্কার, আমি মায়া। আপনার মানসিক প্রশান্তির সঙ্গী।"
+    test_sentence = "আসসালামু আলাইকুম, আমি মায়া। আপনার মানসিক প্রশান্তির সঙ্গী।"
     print(f"\n[1] Synthesizing Bangla speech via Edge-TTS:")
     print(f"    Text: '{test_sentence}'")
     print(f"    Voice: {settings.TTS_VOICE}")

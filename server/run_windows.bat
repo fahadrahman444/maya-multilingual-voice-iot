@@ -1,11 +1,19 @@
 @echo off
 chcp 65001 >nul
+set PYTHONUTF8=1
+set PYTHONIOENCODING=utf-8
 echo ========================================================
 echo        MAYA Voice Assistant - Windows Launcher
 echo ========================================================
 cd /d "%~dp0"
 
-IF NOT EXIST "venv" (
+IF EXIST "..\venv\Scripts\activate.bat" (
+    echo [INFO] Activating root virtual environment: ..\venv
+    call "..\venv\Scripts\activate.bat"
+) ELSE IF EXIST "venv\Scripts\activate.bat" (
+    echo [INFO] Activating local virtual environment: venv
+    call "venv\Scripts\activate.bat"
+) ELSE (
     echo [INFO] Virtual environment not found. Creating 'venv'...
     python -m venv venv
     IF %ERRORLEVEL% NEQ 0 (
@@ -21,8 +29,6 @@ IF NOT EXIST "venv" (
         pause
         exit /b %ERRORLEVEL%
     )
-) ELSE (
-    call venv\Scripts\activate.bat
 )
 
 IF NOT EXIST ".env" (

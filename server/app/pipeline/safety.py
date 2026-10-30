@@ -16,6 +16,13 @@ KAAN_PETE_ROI_RESPONSE_BN = (
     "০১৭৭৯-৫৫৪৩৯১ অথবা ০১৭৭৯-৫৫৪৩৯২। তারা সার্বক্ষণিক আপনার কথা শোনার জন্য পাশে আছেন।"
 )
 
+KAAN_PETE_ROI_RESPONSE_EN = (
+    "I understand you are going through an overwhelming and painful time. "
+    "Please know that you are not alone and your life is precious. "
+    "Please reach out right now to the Kaan Pete Roi mental health helpline at: "
+    "01779-554391 or 01779-554392. Caring listeners are available right now to support you."
+)
+
 # Deterministic patterns for suicide, severe self-harm, and extreme crisis
 CRISIS_PATTERNS = [
     # Direct Bangla suicide & self-harm
@@ -50,7 +57,7 @@ COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in CRISIS_PATTERNS]
 def evaluate_crisis_guardrail(text: str) -> SafetyCheckResult:
     """
     Zero-latency deterministic filter for self-harm and acute mental health crisis.
-    Bypasses standard LLM generation to guarantee ethical suicide intervention.
+    Bypasses standard LLM generation to guarantee ethical suicide intervention in both Bangla and English.
     """
     if not text:
         return SafetyCheckResult(is_crisis=False)
@@ -58,10 +65,12 @@ def evaluate_crisis_guardrail(text: str) -> SafetyCheckResult:
     clean_text = text.strip()
     for pattern in COMPILED_PATTERNS:
         if pattern.search(clean_text):
+            has_bangla = any('\u0980' <= c <= '\u09ff' for c in clean_text)
+            response_text = KAAN_PETE_ROI_RESPONSE_BN if has_bangla else KAAN_PETE_ROI_RESPONSE_EN
             return SafetyCheckResult(
                 is_crisis=True,
                 crisis_category="suicide_or_self_harm",
-                override_response=KAAN_PETE_ROI_RESPONSE_BN,
+                override_response=response_text,
             )
 
     return SafetyCheckResult(is_crisis=False)
