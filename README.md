@@ -15,7 +15,7 @@ Built with a **Software-First & Voice-First** methodology, MAYA runs fully hands
 
 ## ✨ Key Capabilities
 
-* ⚡ **Siri-Grade Turn-Taking & Endpointing:** Cut silence endpoint latency to **~450ms** (`VAD_ENDPOINT_MS=450`), achieving **≤ 700ms p50** end-to-end voice latency.
+* 🎙️ **Hands-Free Continuous Voice Conversation:** Powered by WebRTC VAD with a comfortable **1.65-second silence tolerance** (`VAD_ENDPOINT_MS=1650`), allowing users to pause and think without being cut off.
 * 🛑 **Full-Duplex Barge-In Interruption:** Real-time microphone monitoring via `sounddevice.RawStream` interrupts playback within **< 50ms** when the user speaks.
 * 🧠 **Dual-Brain Architecture with Circuit Breaker:**
   * **Primary:** Google Gemini 3.5 Flash-Lite (`gemini-3.5-flash-lite`) for deep empathy, reasoning, and zero-cost tokens.
@@ -56,7 +56,7 @@ sequenceDiagram
     autonumber
     actor User as User (Bangla / English)
     participant Mic as Mic / RawStream
-    participant VAD as WebRTC VAD (450ms Endpoint)
+    participant VAD as WebRTC VAD (1.65s Pause)
     participant STT as Groq Whisper Large V3
     participant Norm as Unicode Normalizer (NFC / bnorm)
     participant Safety as Crisis Guardrail
@@ -68,7 +68,7 @@ sequenceDiagram
 
     User->>Mic: Speaks turn naturally
     Mic->>VAD: Streams 30ms frames (16kHz PCM)
-    VAD-->>Mic: End of speech detected (450ms silence)
+    VAD-->>Mic: End of speech detected (1.65s silence)
     Mic->>STT: Submits audio with vocabulary bias
     STT->>Norm: Raw transcription
     Norm-->>Brain: NFC-normalized transcript

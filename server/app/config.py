@@ -36,10 +36,10 @@ class Settings:
     SERVER_HOST: str = os.getenv("SERVER_HOST", "0.0.0.0")
     SERVER_PORT: int = int(os.getenv("SERVER_PORT", "8000"))
 
-    # Siri-Grade Voice Prosody & Turn-Taking Specifications
+    # Voice Prosody & Turn-Taking Specifications
     VOICE_PACE: float = float(os.getenv("VOICE_PACE", "1.0"))             # 0.8 to 1.2 rate multiplier
     VOICE_EXPRESSIVITY: str = os.getenv("VOICE_EXPRESSIVITY", "medium")   # low | medium | high
-    VAD_ENDPOINT_MS: int = int(os.getenv("VAD_ENDPOINT_MS", "450"))       # Crisp 450ms turn completion
+    VAD_ENDPOINT_MS: int = int(os.getenv("VAD_ENDPOINT_MS", "1650"))      # 1.65s comfortable pause tolerance
     BARGE_IN_ENABLED: bool = os.getenv("BARGE_IN_ENABLED", "True").lower() in ("true", "1")
 
     # Speech Synthesis (Edge TTS) - Permanent Soft / Alluring Female Profile

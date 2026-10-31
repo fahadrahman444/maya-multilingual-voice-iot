@@ -13,7 +13,7 @@ flowchart TD
     subgraph M1["MILESTONE 1: Pure Voice AI Assistant (COMPLETED & VERIFIED ✅)"]
         S1["Step 1: Environment & API Foundation ✅"] --> S2["Step 2: Bilingual Speech Pipeline (STT + TTS) ✅"]
         S2 --> S3["Step 3: Crisis Guardrail & Empathetic Dual-Brain ✅"]
-        S3 --> S4["Step 4: Siri-Grade Turn-Taking & Full-Duplex Barge-In ✅"]
+        S3 --> S4["Step 4: Continuous Hands-Free VAD & Full-Duplex Barge-In ✅"]
         S4 --> S5["Step 5: Tiered Memory & Continuous Correction Flywheel ✅"]
         S5 --> S6["Step 6: Decoupled Prosody, Bengali Normalizer & Telemetry Sink ✅"]
     end
@@ -46,8 +46,8 @@ flowchart TD
 * **Circuit Breaker:** Sliding-window error thresholding with 60-second cooldown and mid-stream failover.
 * **Greetings:** Strict Salam-only policy (*"আসসালামু আলাইকুম"* / *"ওয়ালাইকুম আসসালাম"*) and respectful address preference.
 
-### Step 4: Siri-Grade Turn-Taking & Full-Duplex Barge-In (Completed ✅)
-* **Siri-Grade Endpointing:** WebRTC VAD endpointing reduced to **450ms** (`VAD_ENDPOINT_MS=450`), reaching **≤ 700ms p50** end-to-end voice latency.
+### Step 4: Continuous Hands-Free VAD & Full-Duplex Barge-In (Completed ✅)
+* **Pause Tolerance:** WebRTC VAD endpointing configured to a comfortable **1.65s** (`VAD_ENDPOINT_MS=1650`), allowing natural pauses without premature interruption.
 * **Full-Duplex Barge-In Interruption:** Real-time microphone monitoring via `sounddevice.RawStream` interrupts speaker output within **< 50ms** when the user speaks.
 
 ### Step 5: Tiered Memory, Contradiction Resolution & Flywheel (Completed ✅)

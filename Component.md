@@ -65,7 +65,7 @@ Below is the recommended GPIO allocation for the ESP32-S3 N16R8 to avoid strappi
 ### B. Core Python Pipeline Dependencies
 * **FastAPI & Networking:** `fastapi`, `uvicorn[standard]`, `websockets`, `python-dotenv`, `pydantic-settings`
 * **Speech-to-Text (STT):** `groq` (`whisper-large-v3` with dynamic vocabulary biasing & automatic language detection)
-* **Voice Activity Detection & Endpointing:** `webrtcvad` (450ms Siri-grade endpointing with RMS energy thresholding)
+* **Voice Activity Detection & Endpointing:** `webrtcvad` (1.65s comfortable pause tolerance with RMS energy thresholding)
 * **Barge-In Acoustic Monitoring:** `sounddevice.RawStream` full-duplex simultaneous mic-read/speaker-write (<50ms playback cut)
 * **Bangla Normalization Engine:** `bnunicodenormalizer` token-level normalizer + `unicodedata.normalize('NFC')`
 * **Dual-Brain Cognitive Engine:**

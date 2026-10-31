@@ -50,8 +50,8 @@ FRAME_MS = 30           # 30ms frames
 FRAME_SIZE = int(SAMPLE_RATE * FRAME_MS / 1000)  # 480 samples
 PRE_ROLL_FRAMES = 12    # ~360ms pre-speech buffer
 
-# Siri-Grade Endpointing: ~450ms pause before assistant commits to answering
-SILENCE_PAUSE_SECONDS = settings.VAD_ENDPOINT_MS / 1000.0  # 0.45s default
+# Voice Endpointing: ~1.65s pause before assistant commits to answering
+SILENCE_PAUSE_SECONDS = settings.VAD_ENDPOINT_MS / 1000.0  # 1.65s default
 SILENCE_FRAMES_THRESHOLD = max(10, int(SILENCE_PAUSE_SECONDS * 1000 / FRAME_MS))
 MIN_SPEECH_FRAMES = 10  # ~300ms minimum speech length
 MIN_RMS_THRESHOLD = 180.0
@@ -272,7 +272,7 @@ async def process_user_turn(user_text: str, t_stt: float = 0.0) -> bool:
 async def main():
     print("=" * 65)
     print("       MAYA: Multilingual AI Voice Assistant (Bangla & English)")
-    print(f"       Mode: Siri-Grade Engine (Endpoint: {settings.VAD_ENDPOINT_MS}ms, Barge-In: {settings.BARGE_IN_ENABLED})")
+    print(f"       Mode: Hands-Free Voice Engine (Endpoint: {settings.VAD_ENDPOINT_MS}ms, Barge-In: {settings.BARGE_IN_ENABLED})")
     print("=" * 65)
     print("1. [V] Hands-Free Voice Mode (Speak naturally, auto silence detection) [Default]")
     print("2. [T] Text Mode (Type in terminal, listen to spoken reply)")
@@ -336,10 +336,10 @@ async def main():
                 break
 
     else:
-        # Default: Continuous Hands-Free VAD with Siri-Grade ~450ms endpointing
-        print("\n✨ [SIRI-GRADE HANDS-FREE VOICE ACTIVATED]")
+        # Default: Continuous Hands-Free VAD with 1.65s comfortable pause tolerance
+        print("\n✨ [HANDS-FREE VOICE ACTIVATED]")
         print("   • Speak naturally in Bangla or English.")
-        print(f"   • Crisp Endpointing: ~{settings.VAD_ENDPOINT_MS}ms pause.")
+        print(f"   • Pause Tolerance: ~{settings.VAD_ENDPOINT_MS / 1000.0:.2f}s pause (you can pause/think without being interrupted).")
         print(f"   • Real-Time Barge-In: {'Enabled' if settings.BARGE_IN_ENABLED else 'Disabled'}")
         print("   • Press Ctrl+C anytime to exit.\n")
 

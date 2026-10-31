@@ -23,7 +23,7 @@ sequenceDiagram
 
     User->>Mic: Speaks query naturally
     Mic->>VAD: Evaluates 30ms frames (16kHz PCM)
-    VAD-->>Mic: Speech complete (450ms silence pause)
+    VAD-->>Mic: Speech complete (1.65s silence pause)
     Mic->>STT: Submits audio with vocabulary bias
     STT->>Norm: Raw transcript
     Norm-->>Brain: Standardized NFC / bnorm transcript
@@ -52,9 +52,9 @@ sequenceDiagram
 
 ## 2. Technical Component Workflows
 
-### A. Siri-Grade Audio Ingestion, VAD & Barge-In
+### A. Continuous Hands-Free Audio Ingestion, VAD & Barge-In
 * **Audio Format:** 16kHz, 16-bit Mono PCM.
-* **Siri-Grade Endpointing:** WebRTC VAD (`mode=1`), 360ms pre-roll audio ring buffer, and **450ms silence pause threshold** (`VAD_ENDPOINT_MS=450`).
+* **Pause Tolerance:** WebRTC VAD (`mode=1`), 360ms pre-roll audio ring buffer, and **1.65s silence pause threshold** (`VAD_ENDPOINT_MS=1650`) allowing natural pauses without interruption.
 * **Full-Duplex Barge-In Interruption:** When enabled, audio playback uses `sounddevice.RawStream` to simultaneously read incoming mic energy. If voice energy exceeds `BARGE_IN_RMS_THRESHOLD` (420.0 RMS) while TTS is speaking, playback terminates in **< 50ms**, returning immediately to active listening.
 
 ### B. Bilingual Speech Recognition & Unicode Normalization

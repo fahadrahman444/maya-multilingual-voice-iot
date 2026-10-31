@@ -69,7 +69,7 @@ When the script starts:
 ```text
 =================================================================
        MAYA: Multilingual AI Voice Assistant (Bangla & English)
-       Mode: Siri-Grade Engine (Endpoint: 450ms, Barge-In: True)
+       Mode: Hands-Free Voice Engine (Endpoint: 1650ms, Barge-In: True)
 =================================================================
 1. [V] Hands-Free Voice Mode (Speak naturally, auto silence detection) [Default]
 2. [T] Text Mode (Type in terminal, listen to spoken reply)
@@ -83,7 +83,7 @@ Select mode (V / T / M) [default: V]:
    ```text
    ✨ [HANDS-FREE VOICE MODE ACTIVATED]
       • Speak naturally in Bangla or English.
-      • Siri-grade endpointing: ~450ms pause before assistant commits to answering.
+      • Pause tolerance: ~1.65 seconds (you can pause and think without being cut off).
       • Real-time barge-in: Speak while MAYA is talking to interrupt her immediately!
       • No keyboard input needed! (Press Ctrl+C anytime to exit)
 
@@ -95,7 +95,7 @@ Select mode (V / T / M) [default: V]:
    - *"ডেডলক কী এবং এর শর্তগুলো বলো"* (Bangla technical query)
    - *"It's Pizza Barg, not Pizza Berg"* (Terminology correction flywheel test)
    - *"আজকে আমার মনটা খুব খারাপ, বেঁচে থাকতে ইচ্ছে করছে না"* (Crisis safety guardrail test)
-4. When you finish speaking and pause for **~450ms**, MAYA automatically stops listening, normalizes the Bengali Unicode transcript, streams the response chunk-by-chunk through the sentence boundary engine, and speaks aloud within **≤ 700ms**.
+4. When you finish speaking and pause for **~1.65 seconds**, MAYA automatically stops listening, normalizes the Bengali Unicode transcript, streams the response chunk-by-chunk through the sentence boundary engine, and speaks aloud.
 5. **Test Barge-In:** While MAYA is speaking through the speakers, speak aloud into your microphone. MAYA will cut playback within **< 50ms** and listen to you.
 
 ---
