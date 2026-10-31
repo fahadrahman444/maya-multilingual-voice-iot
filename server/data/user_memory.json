@@ -1,8 +1,18 @@
 {
-  "facts": {},
-  "preferences": {
-    "assistant_name": "MAYA",
-    "voice_tone": "Soft / Alluring Female"
+  "profile": {
+    "user_name": {
+      "value": "Fahad",
+      "updated_at": 1793400000,
+      "confidence": 1.0
+    },
+    "address_style": {
+      "value": "boss",
+      "updated_at": 1793400000,
+      "confidence": 1.0
+    }
   },
-  "corrections": {}
+  "facts": {},
+  "corrections": {},
+  "warm_summary": "",
+  "history_log": []
 }

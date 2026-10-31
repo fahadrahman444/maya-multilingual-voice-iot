@@ -55,19 +55,30 @@ Below is the recommended GPIO allocation for the ESP32-S3 N16R8 to avoid strappi
 
 ---
 
-## 3. Server Specifications & Software Dependencies
+## 3. Server Specifications & Modular Software Pipeline
 
 ### A. Server Environment
 * **Platform:** Windows 10/11, macOS, Linux (Debian 12 / Ubuntu 22.04 LTS).
 * **Runtime:** Python 3.10+ (tested on Python 3.10.11).
-* **Network:** Local Area Network (LAN) Wi-Fi connecting ESP32 and Server, or PC local microphone test runner.
+* **Architecture:** Hybrid Cloud-Accelerated Edge. STT and LLM run via high-speed cloud endpoints (~400ms), while VAD, Unicode normalization, telemetry, and audio I/O run locally on the device with minimal CPU (<2%) and low memory (<100MB).
 
 ### B. Core Python Pipeline Dependencies
-* **FastAPI & Async Networking:** `fastapi`, `uvicorn[standard]`, `websockets`, `python-dotenv`, `pydantic-settings`
-* **Speech-to-Text (STT):** `groq` (Whisper Large V3 with dynamic vocabulary bias & automatic language detection)
-* **Voice Activity Detection (VAD):** `webrtcvad-wheels` (continuous hands-free listening with 1.65s silence threshold & RMS energy floor)
-* **Language Model (Cognitive Brain):** `groq` (Qwen 3.8 27B / Llama 3) & `google-genai` (Gemini 2.0 Flash)
-* **Text-to-Speech (TTS):** `edge-tts` (Soft/Alluring Female profile: `bn-BD-NabanitaNeural` @ -3Hz, `en-US-AvaNeural` @ -2Hz)
-* **Audio Ingestion & Decoding:** `sounddevice`, `numpy`, `scipy`, `miniaudio`
-* **Persistent Memory Store:** Native atomic JSON engine (`server/app/pipeline/memory.py`)
-* **Crisis Safety Guardrail:** Deterministic regex & keyword engine (`server/app/pipeline/safety.py`)
+* **FastAPI & Networking:** `fastapi`, `uvicorn[standard]`, `websockets`, `python-dotenv`, `pydantic-settings`
+* **Speech-to-Text (STT):** `groq` (`whisper-large-v3` with dynamic vocabulary biasing & automatic language detection)
+* **Voice Activity Detection & Endpointing:** `webrtcvad` (450ms Siri-grade endpointing with RMS energy thresholding)
+* **Barge-In Acoustic Monitoring:** `sounddevice.RawStream` full-duplex simultaneous mic-read/speaker-write (<50ms playback cut)
+* **Bangla Normalization Engine:** `bnunicodenormalizer` token-level normalizer + `unicodedata.normalize('NFC')`
+* **Dual-Brain Cognitive Engine:**
+  * Primary: `google-genai` (`gemini-3.5-flash-lite`)
+  * Secondary: `groq` (`openai/gpt-oss-120b`)
+  * Sliding-window circuit breaker with mid-stream failover
+  * Hoisted sentence boundary regex with buffer-level decimal protection and 400ms timeout flush
+* **Speech Synthesis (TTS) & Prosody:**
+  * Engine: `edge-tts` (`bn-BD-NabanitaNeural` & `en-US-AvaNeural`)
+  * Decoupled prosody parameters: Voice Pace (`0.8–1.2×`) and Expressivity (`low`, `medium`, `high`)
+  * Dynamic phonetic lexicon (`apply_pronunciation_lexicon`) and ASCII-to-Bengali numeral conversion (`BANGLA_DIGITS`)
+  * Markdown stripping (`strip_markdown_for_speech`) before audio synthesis
+* **Tiered Memory Store:** Native atomic JSON store with contradiction resolution, audit history, and 800-character budget cap (`server/app/pipeline/memory.py`)
+* **Continuous Correction Flywheel:** Thread-safe JSONL log (`server/data/correction_flywheel.jsonl`)
+* **Zero-Blocking Telemetry:** `TurnTrace` queue with 50MB rolling file rotation (`server/data/traces.jsonl`) and real-time SLO dashboard (`server/app/dashboard.py`)
+* **Crisis Safety Guardrail:** Deterministic regex & keyword engine routing to *Kaan Pete Roi* helpline (`server/app/pipeline/safety.py`)

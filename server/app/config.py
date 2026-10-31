@@ -24,9 +24,23 @@ class Settings:
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 
+    # Language Mirroring Policy ("mirror", "always_bn", "always_en")
+    LANGUAGE_MODE: str = os.getenv("LANGUAGE_MODE", "mirror").lower()
+
+    # Cognitive Brain Provider ("gemini" for free unlimited tokens, "groq" for sub-second latency)
+    BRAIN_PROVIDER: str = os.getenv("BRAIN_PROVIDER", "gemini").lower()
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
     # Server Network
     SERVER_HOST: str = os.getenv("SERVER_HOST", "0.0.0.0")
     SERVER_PORT: int = int(os.getenv("SERVER_PORT", "8000"))
+
+    # Siri-Grade Voice Prosody & Turn-Taking Specifications
+    VOICE_PACE: float = float(os.getenv("VOICE_PACE", "1.0"))             # 0.8 to 1.2 rate multiplier
+    VOICE_EXPRESSIVITY: str = os.getenv("VOICE_EXPRESSIVITY", "medium")   # low | medium | high
+    VAD_ENDPOINT_MS: int = int(os.getenv("VAD_ENDPOINT_MS", "450"))       # Crisp 450ms turn completion
+    BARGE_IN_ENABLED: bool = os.getenv("BARGE_IN_ENABLED", "True").lower() in ("true", "1")
 
     # Speech Synthesis (Edge TTS) - Permanent Soft / Alluring Female Profile
     TTS_VOICE: str = os.getenv("TTS_VOICE", "bn-BD-NabanitaNeural")
@@ -38,7 +52,7 @@ class Settings:
     # Audio & VAD Parameters
     SAMPLE_RATE: int = int(os.getenv("SAMPLE_RATE", "16000"))
     CHANNELS: int = int(os.getenv("CHANNELS", "1"))
-    VAD_SILENCE_SECONDS: float = float(os.getenv("VAD_SILENCE_SECONDS", "1.65"))
+    VAD_SILENCE_SECONDS: float = float(os.getenv("VAD_SILENCE_SECONDS", "0.45"))
 
     def validate_keys(self) -> dict[str, bool]:
         """Check presence of required API keys."""

@@ -1,21 +1,21 @@
 # Testing MAYA Voice Conversation on Windows
 
-This guide explains how to pull the latest repository changes and test the **MAYA Voice Assistant** directly on your Windows laptop.
+This guide explains how to test the **MAYA Voice Assistant** directly on your Windows laptop with full Siri-grade turn-taking, barge-in interruption, and telemetry monitoring.
 
 ---
 
 ## Method 1: One-Click Quick Launch (Recommended)
 
-Batch launchers are provided that automatically activate the virtual environment (`venv`), verify dependencies, and start the interactive assistant.
+Batch launchers are provided that automatically verify dependencies, set environment policies, and start the interactive assistant.
 
-1. Open **Command Prompt** or **PowerShell** and pull the latest changes:
+1. Open **PowerShell** or **Command Prompt** and ensure you have the latest changes:
    ```cmd
    git pull origin main
    ```
 
 2. Run the Windows launcher:
-   * **From Project Root:** Double-click or run `run_windows.bat` directly from the repository root.
-   * **Or from Server Folder:**
+   * **From Project Root:** Double-click or execute `run_windows.bat` directly from the repository root.
+   * **Or from the Server Folder:**
      ```cmd
      cd server
      run_windows.bat
@@ -27,12 +27,7 @@ Batch launchers are provided that automatically activate the virtual environment
 
 If you prefer running commands manually via PowerShell or Command Prompt:
 
-### 1. Pull Latest Code
-```powershell
-git pull origin main
-```
-
-### 2. Activate Virtual Environment
+### 1. Activate Virtual Environment
 If you already set up `venv` at the project root:
 ```powershell
 # From project root (PowerShell):
@@ -41,28 +36,29 @@ If you already set up `venv` at the project root:
 # Or from project root (Command Prompt):
 .\venv\Scripts\activate.bat
 ```
-*(If execution is blocked in PowerShell, run: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`)*
+*(If script execution is blocked in PowerShell, run: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`)*
 
 If setting up for the first time:
 ```powershell
-cd server
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r server/requirements.txt
 ```
 
-### 3. Verify `.env` Configuration
+### 2. Verify `.env` Configuration
 Ensure `server\.env` exists with your valid API keys:
 ```env
+# Speech-to-Text (Groq Whisper Large V3) & Secondary Brain
 GROQ_API_KEY=gsk_...
+
+# Primary Empathetic Cognitive Brain (Gemini 3.5 Flash-Lite)
 GEMINI_API_KEY=AIza...
 ```
 *(If missing, copy `server\.env.example` to `server\.env` and paste your keys)*
 
-### 4. Run the Voice Assistant
+### 3. Run the Voice Assistant
 ```powershell
-cd server
-python run_assistant.py
+python server/run_assistant.py
 ```
 
 ---
@@ -73,6 +69,7 @@ When the script starts:
 ```text
 =================================================================
        MAYA: Multilingual AI Voice Assistant (Bangla & English)
+       Mode: Siri-Grade Engine (Endpoint: 450ms, Barge-In: True)
 =================================================================
 1. [V] Hands-Free Voice Mode (Speak naturally, auto silence detection) [Default]
 2. [T] Text Mode (Type in terminal, listen to spoken reply)
@@ -81,43 +78,64 @@ When the script starts:
 Select mode (V / T / M) [default: V]:
 ```
 
-1. Simply press **`[ENTER]`** to choose **Hands-Free Voice Mode** (or type `T` for terminal text mode).
+1. Press **`[ENTER]`** to choose **Hands-Free Voice Mode** (or type `T` for terminal text mode).
 2. The terminal will activate continuous listening:
    ```text
    ✨ [HANDS-FREE VOICE MODE ACTIVATED]
       • Speak naturally in Bangla or English.
-      • Pause tolerance: ~1.65 seconds (you can pause/think without being interrupted).
+      • Siri-grade endpointing: ~450ms pause before assistant commits to answering.
+      • Real-time barge-in: Speak while MAYA is talking to interrupt her immediately!
       • No keyboard input needed! (Press Ctrl+C anytime to exit)
 
    🎧 [LISTENING...] Speak naturally...
    ```
-3. **Speak naturally in Bangla or English** into your laptop microphone, for example:
-   - *"Hello Maya, how are you today?"* (English conversation)
-   - *"হ্যালো মায়া, কেমন আছেন?"* (Casual greeting)
-   - *"আজকে আমার মনটা খুব খারাপ, ভালো লাগছে না।"* (Empathetic listening)
-   - *"আমি আর বাঁচতে চাই না"* (Crisis safety guardrail test)
-4. When you finish speaking and pause for ~1.65 seconds, MAYA automatically stops listening, processes your speech, and speaks her answer aloud through your speakers!
-5. After speaking her response, MAYA immediately resumes listening for your next turn — zero keys to press!
+3. **Speak naturally in Bangla or English** into your microphone, for example:
+   - *"Hello Maya, how are you today?"* (English casual turn)
+   - *"হ্যালো মায়া, কেমন আছেন?"* (Bangla polite greeting)
+   - *"ডেডলক কী এবং এর শর্তগুলো বলো"* (Bangla technical query)
+   - *"It's Pizza Barg, not Pizza Berg"* (Terminology correction flywheel test)
+   - *"আজকে আমার মনটা খুব খারাপ, বেঁচে থাকতে ইচ্ছে করছে না"* (Crisis safety guardrail test)
+4. When you finish speaking and pause for **~450ms**, MAYA automatically stops listening, normalizes the Bengali Unicode transcript, streams the response chunk-by-chunk through the sentence boundary engine, and speaks aloud within **≤ 700ms**.
+5. **Test Barge-In:** While MAYA is speaking through the speakers, speak aloud into your microphone. MAYA will cut playback within **< 50ms** and listen to you.
 
-### Expected Result:
-- ⏳ **Speech-to-Text (Groq Whisper):** Transcribes speech dynamically in ~300ms.
-- 🧠 **Empathetic Brain / Safety:** Generates a supportive, respectful reply in the matching language (or triggers crisis protocol if self-harm intent is detected).
-- 🔊 **Text-to-Speech (Edge-TTS):** Automatically switches to `en-US-AriaNeural` (English) or `bn-BD-NabanitaNeural` (Bangla).
-- ⚡ **Latency Breakdown:** Displays live timings for STT, Brain, and TTS.
+---
+
+## Inspecting Telemetry & SLO Dashboard
+
+MAYA records per-turn structured traces into a non-blocking JSONL sink with 50MB rotation.
+
+View real-time SLO metrics, latency percentiles, and language breakdown:
+```powershell
+python -m server.app.dashboard
+```
+
+Example output:
+```text
+turns: 12
+TTFA  p50=645.2 ms   p95=820.4 ms
+fallback rate          0.00% (0/12)
+silent truncation      0.00% (0/12)   <-- must be 0
+crisis trigger rate    8.33% (1/12)
+barge-in rate          8.33% (1/12)
+language breakdown:
+  • bn     : 6 turns (TTFA p50: 630.0 ms)
+  • en     : 4 turns (TTFA p50: 660.5 ms)
+  • mixed  : 2 turns (TTFA p50: 672.0 ms)
+```
 
 ---
 
 ## Automated Test Suites
 
-You can run automated unit tests independently from the speech hardware:
+You can run automated test suites independently from the microphone:
 
 ```powershell
-# Test Persistent Memory Store across restarts
-python server/tests/test_memory.py
+# 1. Run Comprehensive Regression Suite (19/19 Verified End-to-End Tests)
+python server/tests/test_regression.py
 
-# Test Empathetic Brain & Crisis Safety Guardrail
-python server/tests/test_brain.py
+# 2. Run Telemetry Sink & Memory Persistence Tests
+pytest server/tests/test_telemetry.py server/tests/test_memory.py
 
-# Test Bangla & English STT & TTS pipeline
+# 3. Test Bilingual Speech Synthesis (TTS) & Transcription (STT)
 python server/tests/test_speech.py
 ```

@@ -26,5 +26,9 @@ build/
 dist/
 *.egg-info/
 
+# Telemetry & Runtime Data
+server/data/*.jsonl
+server/data/*.tmp
+
 # Test audio outputs
 server/tests/output/
