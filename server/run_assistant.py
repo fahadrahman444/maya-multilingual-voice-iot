@@ -7,6 +7,7 @@ import sys
 import time
 import wave
 from pathlib import Path
+from typing import Optional, List, Dict, Any, Tuple
 
 # Add project root to path
 root_dir = Path(__file__).resolve().parent.parent
