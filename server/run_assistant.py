@@ -62,30 +62,32 @@ SILENCE_FRAMES_THRESHOLD = max(10, int(SILENCE_PAUSE_SECONDS * 1000 / FRAME_MS))
 MIN_SPEECH_FRAMES = 10  # ~300ms minimum speech length
 MIN_RMS_THRESHOLD = 180.0
 
-# Lowered threshold to pick up conversational interruption without screaming
-BARGE_IN_RMS_THRESHOLD = float(os.getenv("BARGE_IN_RMS_THRESHOLD", "420.0"))
+# Smart Barge-In RMS threshold (calibrated above laptop speaker echo)
+BARGE_IN_RMS_THRESHOLD = float(getattr(settings, "BARGE_IN_RMS_THRESHOLD", 850.0))
 
 
-def play_pcm_audio(pcm_bytes: bytes, sample_rate: int = SAMPLE_RATE, allow_bargein: bool = True) -> bool:
+def play_pcm_audio(pcm_bytes: bytes, sample_rate: int = SAMPLE_RATE, allow_bargein: bool = True) -> Tuple[bool, bytes]:
     """
     Play raw 16kHz 16-bit Mono PCM audio through the local speakers.
     When allow_bargein is True and enabled in config, monitors microphone in real-time
     and cuts playback within < 50ms if user speaks.
-    Returns: True if interrupted by user voice, False if played completely.
+    Returns: (interrupted: bool, captured_audio: bytes)
     """
     if not pcm_bytes:
-        return False
+        return False, b""
 
     if not allow_bargein or not settings.BARGE_IN_ENABLED:
         audio_array = np.frombuffer(pcm_bytes, dtype=np.int16)
         sd.play(audio_array, samplerate=sample_rate)
         sd.wait()
-        return False
+        return False, b""
 
     chunk_samples = 480  # 30ms
     chunk_bytes_len = chunk_samples * 2
-    bargein_vad = webrtcvad.Vad(2)  # Moderate aggression for interrupt detection
+    bargein_vad = webrtcvad.Vad(2)  # Moderate-to-strict VAD for interrupt distinction
     consecutive_user_speech = 0
+    recent_mic_frames = collections.deque(maxlen=10)  # ~300ms pre-roll to capture start of user interruption
+    frame_index = 0
 
     try:
         with sd.RawStream(samplerate=sample_rate, channels=1, dtype="int16", blocksize=chunk_samples) as stream:
@@ -97,16 +99,26 @@ def play_pcm_audio(pcm_bytes: bytes, sample_rate: int = SAMPLE_RATE, allow_barge
                 # Simultaneous full-duplex mic read and speaker write
                 in_chunk, _ = stream.read(chunk_samples)
                 stream.write(out_chunk)
+                frame_index += 1
+
+                in_bytes = bytes(in_chunk)
+                recent_mic_frames.append(in_bytes)
+
+                # Grace period: ignore first 6 frames (~180ms) to allow audio output stream to settle
+                if frame_index < 6:
+                    continue
 
                 # Measure incoming microphone energy
                 audio_array = np.frombuffer(in_chunk, dtype=np.int16)
                 rms = np.sqrt(np.mean(np.square(audio_array.astype(np.float32))))
 
-                if rms >= BARGE_IN_RMS_THRESHOLD and bargein_vad.is_speech(bytes(in_chunk), sample_rate):
+                # Require higher threshold + WebRTC VAD + 4 consecutive frames (~120ms sustained human voice)
+                if rms >= BARGE_IN_RMS_THRESHOLD and bargein_vad.is_speech(in_bytes, sample_rate):
                     consecutive_user_speech += 1
-                    if consecutive_user_speech >= 2:  # ~60ms of intentional user interruption
+                    if consecutive_user_speech >= 4:
                         print("\n🛑 [BARGE-IN TRIGGERED] (User interrupted speech)")
-                        return True
+                        captured_audio = b"".join(recent_mic_frames)
+                        return True, captured_audio
                 else:
                     consecutive_user_speech = 0
     except Exception:
@@ -115,13 +127,17 @@ def play_pcm_audio(pcm_bytes: bytes, sample_rate: int = SAMPLE_RATE, allow_barge
         sd.play(audio_array, samplerate=sample_rate)
         sd.wait()
 
-    return False
+    return False, b""
 
 
-def record_continuous_vad(is_continuation: bool = False, max_wait_seconds: Optional[float] = None) -> bytes:
+def record_continuous_vad(
+    is_continuation: bool = False,
+    max_wait_seconds: Optional[float] = None,
+    initial_audio: Optional[bytes] = None,
+) -> bytes:
     """
     Passively listen until speech is detected, record until crisp endpoint pause, and return PCM audio.
-    Adaptive Endpointing: Short utterances finalize in ~800ms, hesitant/longer speech gets full 1650ms.
+    If initial_audio is provided (from a barge-in interruption), starts in speaking state immediately.
     """
     vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
     pre_roll = collections.deque(maxlen=PRE_ROLL_FRAMES)
@@ -130,8 +146,14 @@ def record_continuous_vad(is_continuation: bool = False, max_wait_seconds: Optio
     consecutive_silence = 0
     t_start = time.monotonic()
 
+    if initial_audio and len(initial_audio) > 0:
+        is_speaking = True
+        speech_chunks.append(initial_audio)
+        print("\n🎤 [HEARING YOU...] ", end="", flush=True)
+
     prompt_label = "🎧 [LISTENING...] Speak naturally (or Ctrl+C to quit)..." if not is_continuation else "⏳ [HOLDING...] (Waiting for you to finish your thought)..."
-    print(f"\n{prompt_label}", end="", flush=True)
+    if not is_speaking:
+        print(f"\n{prompt_label}", end="", flush=True)
 
     with sd.RawInputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=FRAME_SIZE) as stream:
         while True:
@@ -204,10 +226,10 @@ def record_microphone_until_enter() -> bytes:
     return full_array.tobytes()
 
 
-async def process_user_turn(user_text: str, t_stt: float = 0.0) -> bool:
+async def process_user_turn(user_text: str, t_stt: float = 0.0) -> Tuple[bool, bytes]:
     """
     Process user text through the Siri-grade AI safety & pipelined streaming speech.
-    Returns: True if interrupted via barge-in, False otherwise.
+    Returns: (interrupted: bool, captured_audio: bytes)
     """
     print(f"\n👤 You said: '{user_text}'")
     trace = TurnTrace()
@@ -230,7 +252,7 @@ async def process_user_turn(user_text: str, t_stt: float = 0.0) -> bool:
             trace.mark("first_audio")
             print("🔊 Speaking response through speakers...")
             play_pcm_audio(pcm_audio, allow_bargein=False)
-            return False
+            return False, b""
 
         # 2. Pipelined Sentence-Streaming Brain + TTS
         print("\n🌸 MAYA: ", end="", flush=True)
@@ -239,6 +261,7 @@ async def process_user_turn(user_text: str, t_stt: float = 0.0) -> bool:
         tts_first_ms = 0.0
         is_first_sentence = True
         barge_in_occurred = False
+        barge_in_audio = b""
 
         async for sentence in brain_engine.generate_reply_sentences(user_text):
             s_clean = sentence.strip()
@@ -264,9 +287,10 @@ async def process_user_turn(user_text: str, t_stt: float = 0.0) -> bool:
                 is_first_sentence = False
 
             if pcm_chunk:
-                interrupted = play_pcm_audio(pcm_chunk, allow_bargein=True)
+                interrupted, captured = play_pcm_audio(pcm_chunk, allow_bargein=True)
                 if interrupted:
                     barge_in_occurred = True
+                    barge_in_audio = captured
                     trace.barge_in = True
                     break
 
@@ -280,7 +304,7 @@ async def process_user_turn(user_text: str, t_stt: float = 0.0) -> bool:
             f"LLM TTFT: {llm_ttft_ms:.0f}ms | TTS: {tts_first_ms:.0f}ms | "
             f"First Audio: {first_audio_ms:.0f}ms | BargeIn: {barge_in_occurred}"
         )
-        return barge_in_occurred
+        return barge_in_occurred, barge_in_audio
     except Exception as exc:
         trace.errors.append(type(exc).__name__)
         raise
@@ -369,9 +393,11 @@ async def main():
         print(f"   • Real-Time Barge-In: {'Enabled' if settings.BARGE_IN_ENABLED else 'Disabled'}")
         print("   • Press Ctrl+C anytime to exit.\n")
 
+        barge_audio = b""
         while True:
             try:
-                pcm_bytes = record_continuous_vad()
+                pcm_bytes = record_continuous_vad(initial_audio=barge_audio)
+                barge_audio = b""
 
                 if not pcm_bytes or len(pcm_bytes) < (SAMPLE_RATE * 2 * 0.3):
                     continue
@@ -403,7 +429,7 @@ async def main():
                     play_pcm_audio(pcm, allow_bargein=False)
                     continue
 
-                await process_user_turn(transcribed_text, t_stt=t_stt)
+                _, barge_audio = await process_user_turn(transcribed_text, t_stt=t_stt)
 
             except KeyboardInterrupt:
                 break
