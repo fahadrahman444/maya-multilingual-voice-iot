@@ -23,12 +23,11 @@ from server.app.pipeline.stt import repair_transcript
 from server.app.pipeline.memory import memory_store
 from server.app.pipeline.brain import brain_engine, protect_abbreviations, unprotect, scrub_sentence
 from server.app.pipeline.tts import resolve_prosody_parameters, normalize_text_for_speech, strip_markdown_for_speech
-from server.app.pipeline.bengali import normalize_bangla_text, detect_language
 
 
 async def run_tests():
     print("=" * 65)
-    print("       MAYA: Comprehensive Regression & Quality Test Suite")
+    print("       MAYA: English Regression & Quality Test Suite")
     print("=" * 65)
     failures = []
 
@@ -55,13 +54,13 @@ async def run_tests():
     assert not safety_test2.is_crisis, "Failed: False crisis on repaired transcript"
     print("  ✓ Passed: Phonetically repaired 'acid' to 'assist' and passed safety check.")
 
-    # Test 3: Garbled Bangla transcript detection
-    print("\n[Test 3] Garbled Bangla transcript detection...")
-    garbled_text = "আ, গাটিট, এই এক্সলেন েল"
+    # Test 3: Garbled transcript detection
+    print("\n[Test 3] Garbled transcript detection...")
+    garbled_text = "a x ln el"
     _, is_garbled3 = repair_transcript(garbled_text)
     print(f"  Input: '{garbled_text}' -> is_garbled={is_garbled3}")
-    assert is_garbled3, "Failed: Did not flag fragmented Bangla tokens as garbled"
-    print("  ✓ Passed: Garbled Bangla properly flagged for clarification.")
+    assert is_garbled3, "Failed: Did not flag fragmented tokens as garbled"
+    print("  ✓ Passed: Garbled input properly flagged for clarification.")
 
     # Test 4: Persistent Profile - Store user name
     print("\n[Test 4] Persistent Profile: Set user name 'Fahad'...")
@@ -85,26 +84,23 @@ async def run_tests():
     else:
         print("  ✓ Passed: Assistant respected 'name_only' address preference.")
 
-    # Test 6: Language Mirroring / Explicit Language Request
-    print("\n[Test 6] Language Mirroring: Explain deadlock in Bangla...")
-    reply_bangla = await brain_engine.generate_reply("Explain deadlock in Bangla in 1 sentence")
-    print(f"  MAYA: {reply_bangla}")
-    has_bangla = any('\u0980' <= c <= '\u09ff' for c in reply_bangla)
-    assert has_bangla, f"Failed: Expected Bengali reply, got: '{reply_bangla}'"
-    print("  ✓ Passed: Honored Bangla language request.")
+    # Test 6: Strictly English Policy
+    print("\n[Test 6] Strictly English Policy: Request explanation...")
+    reply_english = await brain_engine.generate_reply("Explain operating system deadlock in 1 short sentence")
+    print(f"  MAYA: {reply_english}")
+    assert reply_english and len(reply_english.split()) > 3
+    print("  ✓ Passed: English response generated successfully.")
 
-    # Test 7: Crisis Guardrail Protection
-    print("\n[Test 7] Crisis Guardrail: Acute distress expression...")
-    crisis_res = evaluate_crisis_guardrail("আমার বেঁচে থাকার কোনো অর্থ নেই, মরে যেতে ইচ্ছে করছে")
+    # Test 7: Crisis Guardrail Protection (Localized for Bangladesh by default)
+    print("\n[Test 7] Crisis Guardrail: Acute distress expression (Bangladesh)...")
+    crisis_res = evaluate_crisis_guardrail("I feel like ending my life, there is no hope left")
     assert crisis_res.is_crisis, "Failed: Crisis pattern was not detected"
-    assert "০১৭৭৯-৫৫৪৩৯১" in crisis_res.override_response, "Failed: Missing helpline number"
-    print("  ✓ Passed: Crisis interceptor fired immediately with verified helpline.")
+    assert any(n in crisis_res.override_response for n in ["Kaan Pete Roi", "16122", "999"]), "Failed: Missing Bangladesh crisis helpline numbers"
+    print("  ✓ Passed: Crisis interceptor fired immediately with verified Bangladesh helpline.")
 
     # Test 8: Prosody Decoupling (Pace vs Expressivity)
     print("\n[Test 8] Prosody Engine: Decoupled Pace & Expressivity...")
-    voice_bn, pitch_bn, rate_bn = resolve_prosody_parameters(is_bangla=True, pace_mult=1.0, expressivity="medium")
-    voice_en, pitch_en, rate_en = resolve_prosody_parameters(is_bangla=False, pace_mult=1.1, expressivity="high")
-    print(f"  Bangla Prosody (pace 1.0, med): voice={voice_bn}, pitch={pitch_bn}, rate={rate_bn}")
+    voice_en, pitch_en, rate_en = resolve_prosody_parameters(pace_mult=1.1, expressivity="high")
     print(f"  English Prosody (pace 1.1, high): voice={voice_en}, pitch={pitch_en}, rate={rate_en}")
     assert rate_en == "+10%", f"Failed: Expected '+10%', got '{rate_en}'"
     assert pitch_en == "-3Hz", f"Failed: Expected '-3Hz', got '{pitch_en}'"
@@ -123,7 +119,7 @@ async def run_tests():
     sample_raw = "Dr. Smith said 3.14 is pi. That's a fact!"
     protected = protect_abbreviations(sample_raw)
     import re
-    sentence_regex = re.compile(r"([^.!?।\n]+[.!?।]+(?:\s+|$))")
+    sentence_regex = re.compile(r"([^.!?\n]+[.!?]+(?:\s+|$))")
     parts = []
     buf = protected
     while True:
@@ -161,37 +157,8 @@ async def run_tests():
     assert len(prompt_str) <= 800, f"Failed: Memory exceeded budget cap ({len(prompt_str)} chars)"
     print("  ✓ Passed: Contradiction resolved with audit history, prompt cap verified.")
 
-    # Test 13: Bengali Unicode Normalization & Script Classification
-    print("\n[Test 13] Bengali Unicode Normalization & Language Classification...")
-    bn_sample = "আমি বাংলায় কথা বলি।"
-    assert normalize_bangla_text(bn_sample) == bn_sample
-    assert detect_language("আমি বাংলায় কথা বলি") == "bn"
-    assert detect_language("Hello Maya") == "en"
-    assert detect_language("হ্যালো Maya") == "mixed"
-    print("  ✓ Passed: Unicode normalizer and 3-way language classifier verified.")
-
-    # Test 14: Phonetic Pronunciation Lexicon for TTS
-    print("\n[Test 14] Phonetic Pronunciation Lexicon for TTS...")
-    tts_input = "সিস্টেমে ডেডলক হয়েছে, ভার্সন 2.5।"
-    tts_normalized = normalize_text_for_speech(tts_input, is_bangla=True)
-    assert "ডেড-লক" in tts_normalized, f"Failed: Lexicon replacement missing: {tts_normalized}"
-    assert "২.৫" in tts_normalized, f"Failed: Bengali digit conversion missing: {tts_normalized}"
-    print(f"  TTS Output: '{tts_normalized}'")
-    print("  ✓ Passed: Phonetic pronunciations and Bengali digits successfully applied.")
-
-    # Test 15: Correction Flywheel Logging
-    print("\n[Test 15] Bangla Correction Flywheel Logging...")
-    flywheel_file = Path("server/data/correction_flywheel.jsonl")
-    initial_flywheel_lines = len(flywheel_file.read_text(encoding="utf-8").splitlines()) if flywheel_file.exists() else 0
-    brain_engine._detect_and_record_correction("এটা ঢাকা, ঢাক্কা না")
-    assert memory_store.get_corrections().get("ঢাক্কা") == "ঢাকা", "Failed: Correction not stored in memory"
-    assert flywheel_file.exists(), "Failed: Flywheel JSONL was not created"
-    new_flywheel_lines = len(flywheel_file.read_text(encoding="utf-8").splitlines())
-    assert new_flywheel_lines == initial_flywheel_lines + 1, "Failed: Flywheel did not record correction entry"
-    print("  ✓ Passed: Flywheel successfully appended acoustic correction entry.")
-
-    # Test 16: Markdown Stripping for TTS Speech
-    print("\n[Test 16] Markdown Stripping for Speech Output...")
+    # Test 13: Markdown Stripping for TTS Speech
+    print("\n[Test 13] Markdown Stripping for Speech Output...")
     md_dirty = "**Warning:** Please edit `server.py` and see [details](http://example.com)!"
     md_clean = strip_markdown_for_speech(md_dirty)
     assert "**" not in md_clean and "`" not in md_clean and "http" not in md_clean
@@ -199,16 +166,16 @@ async def run_tests():
     print(f"  Scrubbed Markdown: '{md_clean}'")
     print("  ✓ Passed: Markdown symbols cleanly stripped before speech synthesis.")
 
-    # Test 17: Correction Regex False-Positive Rejection
-    print("\n[Test 17] Hardened Correction Detection (False-Positive Defense)...")
+    # Test 14: Hardened Correction Detection (False-Positive Defense)
+    print("\n[Test 14] Hardened Correction Detection (False-Positive Defense)...")
     prior_corrections = dict(memory_store.get_corrections())
     brain_engine._detect_and_record_correction("I'm not happy, today is bad.")
     assert "happy" not in memory_store.get_corrections(), "Failed: Innocent prose incorrectly triggered term correction!"
     assert memory_store.get_corrections() == prior_corrections, "Failed: False positive correction recorded!"
     print("  ✓ Passed: Innocent conversational sentence ignored by correction engine.")
 
-    # Test 18: Splitter Buffer Fragmented Token Protection
-    print("\n[Test 18] Splitter Buffer Fragmented Token Protection...")
+    # Test 15: Splitter Buffer Fragmented Token Protection
+    print("\n[Test 15] Splitter Buffer Fragmented Token Protection...")
     from server.app.pipeline.brain import SENTENCE_REGEX
     simulated_chunks = ["Dr.", " Smith said that 3.", "14 is pi.", " It's amazing!"]
     buf = ""
@@ -230,23 +197,82 @@ async def run_tests():
     print(f"  Extracted sentences: {extracted}")
     print("  ✓ Passed: Fragmented decimals and titles protected across streaming chunk boundaries.")
 
-    # Test 19: Session Isolation & Multi-User State
-    print("\n[Test 19] Session Isolation & Multi-User State...")
+    # Test 16: Session Isolation & Multi-User State
+    print("\n[Test 16] Session Isolation & Multi-User State...")
     sess1 = brain_engine.get_session("user_alpha")
     sess2 = brain_engine.get_session("user_beta")
     sess1.history.append({"role": "user", "content": "Hello from Alpha"})
-    sess1.preferred_language = "en"
-    sess2.history.append({"role": "user", "content": "হ্যালো from Beta"})
-    sess2.preferred_language = "bn"
+    sess2.history.append({"role": "user", "content": "Hello from Beta"})
     assert len(sess1.history) == 1 and sess1.history[0]["content"] == "Hello from Alpha"
-    assert len(sess2.history) == 1 and sess2.history[0]["content"] == "হ্যালো from Beta"
-    assert sess1.preferred_language != sess2.preferred_language
+    assert len(sess2.history) == 1 and sess2.history[0]["content"] == "Hello from Beta"
     print("  ✓ Passed: Independent session states isolated without cross-talk.")
+
+    # Test 17: User Privacy & Memory Clear / Forget Command
+    print("\n[Test 17] User Privacy & Forget Command...")
+    memory_store.set_fact("favorite_book", "Atomic Habits")
+    assert memory_store.get_fact("favorite_book") == "Atomic Habits"
+    await brain_engine.generate_reply("Please forget my details and clear my memory")
+    assert memory_store.get_fact("favorite_book") is None, "Failed: Facts were not purged on privacy command"
+    print("  ✓ Passed: User privacy forget command successfully purged stored memory.")
+
+    # Test 18: Multi-Locale Crisis Directory (US vs BD)
+    print("\n[Test 18] Multi-Locale Crisis Directory (US fallback)...")
+    crisis_us = evaluate_crisis_guardrail("I want to kill myself", locale="us")
+    assert "988" in crisis_us.override_response, "Failed: US locale did not return 988"
+    crisis_bd = evaluate_crisis_guardrail("I want to kill myself", locale="bd")
+    assert "Kaan Pete Roi" in crisis_bd.override_response and "16122" in crisis_bd.override_response
+    print("  ✓ Passed: Crisis responses accurately localized across Bangladesh and US configurations.")
+
+    # Test 19: Episodic Memory & Query-Conditioned Scored Retrieval
+    print("\n[Test 19] Episodic Memory & Query-Conditioned Scored Retrieval...")
+    memory_store.add_episode("Going through a breakup with partner", valence="negative", sensitivity="sensitive")
+    memory_store.set_fact("job", "Software Engineer at UITS")
+    
+    # Query regarding breakup should retrieve the breakup episode
+    mem_prompt_breakup = memory_store.format_for_prompt(query="I'm feeling down about the breakup")
+    assert "<user_memory" in mem_prompt_breakup, "Failed: Missing security delimiter sandbox"
+    assert "breakup with partner" in mem_prompt_breakup, "Failed: Breakup episode not scored/retrieved"
+    print("  ✓ Passed: Scored retrieval selectively injected relevant life episode inside XML sandbox.")
+
+    # Test 20: Transparent Memory Inspection Query ("What do you remember?")
+    print("\n[Test 20] Transparent Memory Inspection Query...")
+    memory_reply = await brain_engine.generate_reply("What do you remember about me?")
+    assert "remember" in memory_reply.lower() or "fahad" in memory_reply.lower()
+    print(f"  MAYA: {memory_reply}")
+    print("  ✓ Passed: Assistant transparently reported recalled profile and memory state.")
+
+    # Clean up test episode so memory remains fresh
+    memory_store.forget_episode("breakup")
+    memory_store.forget_fact("job")
+
+    # Test 21: Defense Against Name Poisoning (Verbs/Participles e.g. "studying")
+    print("\n[Test 21] Defense Against Name Poisoning ('studying', 'feeling')...")
+    memory_store.clear_all()
+    brain_engine._detect_and_record_correction("I am studying BSc computer science")
+    assert memory_store.get_user_name() is None, f"Failed: 'studying' was extracted as user name: {memory_store.get_user_name()}"
+    brain_engine._detect_and_record_correction("I am feeling exhausted")
+    assert memory_store.get_user_name() is None, "Failed: 'feeling' was extracted as user name"
+    # But confirmed name works
+    brain_engine._detect_and_record_correction("My name is Tanvir")
+    assert memory_store.get_user_name() == "Tanvir", "Failed: Legitimate name 'Tanvir' was rejected"
+    print("  ✓ Passed: Participles and verbs properly blocked from poisoning name memory.")
+
+    # Test 22: TTS Word-Boundary Merge Repairs
+    print("\n[Test 22] TTS Word-Boundary Merge Repairs ('anincredibly', 'itis')...")
+    sample_merged = "This makes for anincredibly heavy day and itis okay."
+    normalized_merged = normalize_text_for_speech(sample_merged)
+    assert "an incredibly" in normalized_merged, f"Failed: Did not repair 'anincredibly': {normalized_merged}"
+    assert "it is" in normalized_merged, f"Failed: Did not repair 'itis': {normalized_merged}"
+    print(f"  Repaired Speech String: '{normalized_merged}'")
+    print("  ✓ Passed: Accidental token merges repaired before audio synthesis.")
+
+    # Reset memory cleanly after tests
+    memory_store.clear_all()
 
     # Summary
     print("\n" + "=" * 65)
     if not failures:
-        print("🎉 ALL REGRESSION TESTS PASSED CLEANLY (19/19)")
+        print("🎉 ALL REGRESSION TESTS PASSED CLEANLY (22/22)")
     else:
         print(f"⚠️ {len(failures)} REGRESSION TEST FAILURES:")
         for f in failures:

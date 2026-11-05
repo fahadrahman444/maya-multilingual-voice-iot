@@ -78,12 +78,8 @@ class TurnTrace:
         self.stages[name] = round((time.perf_counter() - self._t0) * 1000, 1)
 
     def record_user_input(self, text: str) -> None:
-        """Classify and record turn language without storing raw speech transcript."""
-        try:
-            from server.app.pipeline.bengali import detect_language
-            self.language = detect_language(text)
-        except Exception:
-            self.language = "unknown"
+        """Record turn language for English voice assistant."""
+        self.language = "en"
 
     # -- sentence bookkeeping ---------------------------------------------- #
     def observe_sentence(self, chunk: str, *, terminated: bool) -> None:

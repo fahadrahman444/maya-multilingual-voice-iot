@@ -1,18 +1,8 @@
 {
-  "profile": {
-    "user_name": {
-      "value": "Fahad",
-      "updated_at": 1793400000,
-      "confidence": 1.0
-    },
-    "address_style": {
-      "value": "boss",
-      "updated_at": 1793400000,
-      "confidence": 1.0
-    }
-  },
+  "profile": {},
   "facts": {},
   "corrections": {},
+  "episodes": [],
   "warm_summary": "",
   "history_log": []
 }

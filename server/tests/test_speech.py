@@ -24,11 +24,11 @@ from server.app.config import settings
 
 async def main():
     print("=" * 60)
-    print("MAYA: Testing Step 2 - Bangla Speech Pipeline (STT & TTS)")
+    print("MAYA: Testing Step 2 - English Speech Pipeline (STT & TTS)")
     print("=" * 60)
 
-    test_sentence = "আসসালামু আলাইকুম, আমি মায়া। আপনার মানসিক প্রশান্তির সঙ্গী।"
-    print(f"\n[1] Synthesizing Bangla speech via Edge-TTS:")
+    test_sentence = "Hello, I am Maya. Your personal voice assistant."
+    print(f"\n[1] Synthesizing English speech via Edge-TTS:")
     print(f"    Text: '{test_sentence}'")
     print(f"    Voice: {settings.TTS_VOICE}")
 
@@ -43,7 +43,7 @@ async def main():
     # Save audio file to test directory for inspection
     test_out_dir = Path(__file__).parent / "output"
     test_out_dir.mkdir(parents=True, exist_ok=True)
-    out_mp3 = test_out_dir / "sample_bangla.mp3"
+    out_mp3 = test_out_dir / "sample_english.mp3"
     mp3_bytes = await synthesize_speech_mp3(test_sentence)
     out_mp3.write_bytes(mp3_bytes)
     print(f"    -> Saved MP3 preview to: {out_mp3.relative_to(root_dir)}")
@@ -51,21 +51,18 @@ async def main():
     print(f"\n[2] Testing Groq Whisper Speech-to-Text (STT):")
     if not stt_client.is_configured:
         print("    [!] GROQ_API_KEY is not configured yet in server/.env.")
-        print("    -> TTS passed successfully with zero errors!")
-        print("    -> To test transcription, add your free Groq API key to server/.env:")
-        print("       GROQ_API_KEY=gsk_...")
     else:
-        print("    -> Sending synthesized PCM audio to Groq Whisper Large V3...")
+        print("    -> Sending synthesized PCM audio to Groq Whisper Large V3 (English)...")
         start_stt = time.perf_counter()
-        transcription = await stt_client.transcribe_pcm(pcm_bytes)
+        transcription, is_garbled = await stt_client.transcribe_pcm(pcm_bytes, language="en")
         stt_duration = time.perf_counter() - start_stt
 
-        print(f"    -> Transcribed Bangla Text: '{transcription}'")
+        print(f"    -> Transcribed English Text: '{transcription}'")
         print(f"    -> STT Latency: {stt_duration * 1000:.1f} ms")
         print(f"    -> Total Roundtrip Time: {(tts_duration + stt_duration) * 1000:.1f} ms")
 
     print("\n" + "=" * 60)
-    print("Step 2 Core Test Complete!")
+    print("English Core Test Complete!")
     print("=" * 60)
 
 

@@ -66,6 +66,35 @@ def test_persistent_memory_across_restarts():
         assert store3.get_fact("Favorite Drink") == "Black Coffee"
         print("    -> Session 3 verified updated fact was persisted.")
 
+        # Session 4: Test Episodic Memory & Query-Conditioned Retrieval
+        print("\n[4] Session 4: Testing Episodic Memory & Query-Conditioned Scored Retrieval...")
+        store3.add_episode("User broke up with long-term partner", valence="negative", sensitivity="sensitive")
+        store3.add_episode("User has a software engineering exam next week", valence="neutral", sensitivity="personal")
+
+        # Query about breakup -> should retrieve breakup episode
+        prompt_breakup = store3.format_for_prompt(query="I am feeling so sad about the breakup")
+        assert "<user_memory" in prompt_breakup, "Failed: Missing XML security sandbox"
+        assert "broke up with long-term partner" in prompt_breakup, "Failed: Breakup episode not recalled on relevant query"
+        print("    -> Successfully retrieved breakup episode on relevant query.")
+
+        # Query about exam -> should retrieve exam episode
+        prompt_exam = store3.format_for_prompt(query="I need to study for my exam")
+        assert "software engineering exam" in prompt_exam, "Failed: Exam episode not recalled on exam query"
+        print("    -> Successfully retrieved exam episode on relevant query.")
+
+        # Session 5: Granular Forget & Memory Inspection
+        print("\n[5] Session 5: Testing Granular Forget & Transparent Summary...")
+        summary = store3.get_summary_of_memory()
+        assert "broke up" in summary or "exam" in summary
+        print(f"    -> Summary: {summary}")
+
+        # Forget breakup episode specifically
+        removed = store3.forget_episode("breakup")
+        assert removed == 1, "Failed: Expected 1 episode removed"
+        prompt_after_forget = store3.format_for_prompt(query="breakup")
+        assert "broke up with long-term partner" not in prompt_after_forget, "Failed: Breakup still present after granular forget"
+        print("    -> Successfully verified granular forget of specific episode.")
+
     print("\n" + "=" * 65)
     print("Persistent Memory Unit Test Passed Completely (100%)!")
     print("=" * 65)

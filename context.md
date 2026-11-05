@@ -59,14 +59,18 @@ Mental health challenges and loneliness are often stigmatized or unaddressed. MA
 
 ## 3. Hardware & Peripherals Overview
 
-All physical edge tasks are executed on affordable, off-the-shelf components:
-* **Controller:** ESP32-S3 N16R8 (16MB Flash, 8MB PSRAM, Wi-Fi 4 + BLE 5).
+All physical edge tasks are executed on affordable, off-the-shelf components assembled as a tabletop interactive robot:
+* **Controller:** ESP32-S3 N16R8 (16MB Flash, 8MB Octal PSRAM, Wi-Fi 4 + BLE 5).
+* **Breakout Shield:** ESP32-S3 GPIO Terminal Expansion Board (vibration-resistant screw terminals).
 * **Audio Input:** INMP441 digital MEMS omnidirectional microphone ($I^2S$).
 * **Audio Output:** MAX98357A Class-D amplifier breakout + 4 Ω, 3 W speaker ($I^2S$).
+* **Robotic Neck (Gestures):** 2× MG90S metal-gear micro servos (Pan & Tilt via direct ESP32 GPIO PWM).
+* **Facial Expressions:** 0.96" I²C OLED display (SSD1306) for dynamic animated eye states (blinking, listening, smiling).
 * **Appliance Control:** 5 V 1-Channel optocoupled relay module.
-* **Interaction:** Hands-free Voice Command Wake-Up (ESP-SR WakeNet detecting *"Hey Maya"* / *"মায়া"*) with server-side VAD and software half-duplex mic muting during speaker playback. (Tactile button on breadboard retained as optional manual override).
+* **Power Supply:** Regulated 5 V, 3 A DC adapter + 470µF–1000µF decoupling capacitor.
+* **Interaction:** Hands-free Voice Command Wake-Up with server-side VAD, acoustic barge-in, physical head gestures, and tactile override button.
 
-For exact wiring pinouts and component specifications, refer to [Component.md](file:///home/fahad/Desktop/MAYA/Component.md).
+For exact wiring pinouts, gesture matrices, and itemized component costs (৳4,238 BDT), refer to [Component.md](Component.md).
 
 ---
 

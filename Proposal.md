@@ -128,12 +128,16 @@ MAYA adopts a **3-Tier Edge–Gateway–Cloud Hybrid Architecture** (Alternative
 
 ## 7. Hardware & Software Specifications
 
-### A. Hardware Components
-* **Microcontroller:** ESP32-S3 N16R8 (Xtensa 32-bit dual-core, 16 MB Flash, 8 MB PSRAM)
+### A. Hardware Components (Tabletop Robot Prototype)
+* **Microcontroller:** ESP32-S3 N16R8 (Xtensa 32-bit dual-core, 16 MB Flash, 8 MB Octal PSRAM)
+* **Breakout & Wiring:** ESP32-S3 GPIO Terminal Expansion Board (38-pin screw-terminal breakout)
 * **Audio Input:** INMP441 Omnidirectional MEMS digital microphone ($I^2S$)
-* **Audio Output:** MAX98357A Mono Class-D audio amplifier ($I^2S$) + 4 Ω, 3 W speaker
-* **Actuator:** 5 V 1-Channel optocoupled relay module
-* **Controls & Power:** Voice command wake-up (ESP-SR) + tactile override button, breadboard, 5 V 3 A regulated power adapter
+* **Audio Output:** MAX98357A Mono Class-D audio amplifier breakout ($I^2S$) + 4 Ω, 3 W speaker
+* **Robotic Neck Actuation:** 2× MG90S metal-gear micro servos (2-DOF Pan & Tilt direct ESP32 GPIO PWM)
+* **Facial Display:** 0.96" monochrome I²C OLED display (SSD1306, 128×64) for expressive animated eyes
+* **Smart Appliance Actuator:** 5 V 1-Channel optocoupled relay module
+* **Power & Protection:** Regulated 5 V, 3 A DC power adapter + 470µF–1000µF decoupling capacitor + tactile button & status LED
+* **Total Estimated Hardware Budget:** ৳4,238 BDT (Detailed in [Component.md](Component.md))
 
 ### B. Software Tools & Libraries
 * **Embedded Development:** ESP-IDF / Arduino IDE, ESP-SR (WakeNet), FreeRTOS, ArduinoJson, WebSocketsClient

@@ -1,6 +1,6 @@
 # MAYA: Complete Step-by-Step Engineering Working Process
 
-This document serves as the master engineering guide and operational roadmap for developing **MAYA (Multilingual Bangla AI Voice Assistant & IoT Controller)**.
+This document serves as the master engineering guide and operational roadmap for developing **MAYA (Siri-Grade English Voice AI Assistant & IoT Controller)**.
 
 It follows a **Software-First & Voice-First Strategy**: building and thoroughly verifying the complete conversational speech, memory, telemetry, and safety pipeline directly on your computer before introducing smart-home relay controls and embedded ESP32-S3 hardware.
 
@@ -11,11 +11,11 @@ It follows a **Software-First & Voice-First Strategy**: building and thoroughly 
 ```mermaid
 flowchart TD
     subgraph M1["MILESTONE 1: Pure Voice AI Assistant (COMPLETED & VERIFIED ✅)"]
-        S1["Step 1: Environment & API Foundation ✅"] --> S2["Step 2: Bilingual Speech Pipeline (STT + TTS) ✅"]
+        S1["Step 1: Environment & API Foundation ✅"] --> S2["Step 2: English Speech Pipeline (STT + TTS) ✅"]
         S2 --> S3["Step 3: Crisis Guardrail & Empathetic Dual-Brain ✅"]
         S3 --> S4["Step 4: Continuous Hands-Free VAD & Full-Duplex Barge-In ✅"]
-        S4 --> S5["Step 5: Tiered Memory & Continuous Correction Flywheel ✅"]
-        S5 --> S6["Step 6: Decoupled Prosody, Bengali Normalizer & Telemetry Sink ✅"]
+        S4 --> S5["Step 5: Tiered Memory & Contradiction Resolution ✅"]
+        S5 --> S6["Step 6: Decoupled Prosody & Telemetry Sink ✅"]
     end
 
     subgraph M2["MILESTONE 2: IoT & ESP32-S3 Hardware Integration (UPCOMING)"]
@@ -35,47 +35,44 @@ flowchart TD
 * Environment configuration loader with validation in `server/app/config.py`.
 * One-click Windows root launcher (`run_windows.bat`) and `WindowsSelectorEventLoopPolicy` setup to eliminate Windows SSL shutdown bugs.
 
-### Step 2: Bilingual Speech Pipeline (STT & TTS) (Completed ✅)
-* **STT:** Groq Whisper Large V3 with dynamic language identification (Bangla, English, and code-mixed) and vocabulary conditioning in `server/app/pipeline/stt.py`.
-* **TTS:** Microsoft Edge-TTS with language-based voice auto-switching in `server/app/pipeline/tts.py`.
+### Step 2: English Speech Pipeline (STT & TTS) (Completed ✅)
+* **STT:** Groq Whisper Large V3 locked to English (`language="en"`) with domain vocabulary conditioning in `server/app/pipeline/stt.py` (~150–250ms).
+* **TTS:** Microsoft Edge-TTS with natural English neural voice (`en-US-AvaNeural`) in `server/app/pipeline/tts.py`.
 * **Markdown Sanitizer:** `strip_markdown_for_speech` removes `**`, `*`, `` ` ``, `#` before audio synthesis.
 
 ### Step 3: Crisis Guardrail & Cognitive Dual-Brain (Completed ✅)
-* **Safety:** Zero-latency deterministic regex detector for self-harm and suicide crisis phrases across Bangla, English, and Banglish in `server/app/pipeline/safety.py`. Routes directly to *Kaan Pete Roi* helpline (`01779-554391`).
-* **Dual-Brain:** Google Gemini 3.5 Flash-Lite primary with Groq LLaMA fallback.
+* **Safety:** Zero-latency deterministic regex detector for self-harm and acute crisis phrases in `server/app/pipeline/safety.py`. Routes directly to the `988` Suicide & Crisis Lifeline.
+* **Dual-Brain:** Google Gemini 3.5 Flash-Lite primary with Groq (`qwen/qwen3.8-27b`) fallback.
 * **Circuit Breaker:** Sliding-window error thresholding with 60-second cooldown and mid-stream failover.
-* **Greetings:** Strict Salam-only policy (*"আসসালামু আলাইকুম"* / *"ওয়ালাইকুম আসসালাম"*) and respectful address preference.
+* **Siri Brevity:** Enforces 1–2 sentence direct answers without conversational filler or clinginess.
 
 ### Step 4: Continuous Hands-Free VAD & Full-Duplex Barge-In (Completed ✅)
 * **Pause Tolerance:** WebRTC VAD endpointing configured to a comfortable **1.65s** (`VAD_ENDPOINT_MS=1650`), allowing natural pauses without premature interruption.
 * **Full-Duplex Barge-In Interruption:** Real-time microphone monitoring via `sounddevice.RawStream` interrupts speaker output within **< 50ms** when the user speaks.
 
-### Step 5: Tiered Memory, Contradiction Resolution & Flywheel (Completed ✅)
+### Step 5: Tiered Memory & Contradiction Resolution (Completed ✅)
 * **Tiered Memory:** Hot (rolling 6 verbatim turns), Warm (background summarized context), and Cold (persistent disk store in `server/data/user_memory.json`).
 * **Contradiction Resolver:** Automatically detects conflicting preferences/facts and preserves audit history.
 * **Budget Cap:** Strict 800-character (~200 token) prompt budget cap prevents context bloat.
-* **Correction Flywheel:** Logs verified terminology corrections to `server/data/correction_flywheel.jsonl`.
 * **Multi-Session Isolation:** `SessionState` keyed by `session_id` guarantees multi-user concurrency without history contamination.
 
-### Step 6: Decoupled Prosody, Bengali Normalizer & Telemetry Sink (Completed ✅)
+### Step 6: Decoupled Prosody & Telemetry Sink (Completed ✅)
 * **Decoupled Prosody Engine:** Independent Pace (`0.8–1.2×`) and Expressivity (`low`, `medium`, `high`) controls in `server/app/pipeline/tts.py`.
-* **Bengali Unicode Normalization:** `unicodedata.normalize('NFC')` and `bnunicodenormalizer` standardizes Bangla text, eliminating multi-byte encoding mismatches and hallucinations.
-* **Pronunciation Lexicon & Bengali Numerals:** Translates tech words to phonetic spellings (`ডেডলক` $\to$ `ডেড-লক`) and ASCII numbers to Bengali digits (`2.5` $\to$ `২.৫`).
 * **Zero-Blocking Telemetry Sink:** Thread-safe `TurnTrace` queue with 50MB rolling file rotation (`server/data/traces.jsonl`).
-* **SLO Dashboard:** Measures TTFA p50/p95, fallback rates, and language breakdown (`python -m server.app.dashboard`).
+* **SLO Dashboard:** Measures TTFA p50/p95 and fallback rates (`python -m server.app.dashboard`).
 
 ---
 
 ## 3. Automated Test Commands
 
 ```powershell
-# 1. Comprehensive End-to-End Regression Test Suite (19/19 Verified Tests)
+# 1. Comprehensive End-to-End Regression Test Suite (16/16 Verified Tests)
 python server/tests/test_regression.py
 
 # 2. Telemetry Sink & Persistent Memory Tests
 pytest server/tests/test_telemetry.py server/tests/test_memory.py
 
-# 3. Bilingual STT & TTS Pipeline Tests
+# 3. English STT & TTS Pipeline Tests
 python server/tests/test_speech.py
 
 # 4. Cognitive Brain, Context & Crisis Safety Guardrail

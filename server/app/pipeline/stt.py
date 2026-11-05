@@ -6,15 +6,36 @@ from groq import AsyncGroq
 
 from server.app.config import settings
 from server.app.pipeline.memory import memory_store
-from server.app.pipeline.bengali import normalize_bangla_text
 
-# Domain-informed bilingual conditioning prompt to guide Whisper STT accuracy
-DEFAULT_MULTILINGUAL_PROMPT = (
-    "Bangla and English conversation. Common words: assist, deadlock, operating system, "
-    "mutual exclusion, hold and wait, no preemption, circular wait, Fahad, MAYA. "
-    "হ্যালো মায়া, কেমন আছেন? কী সাহায্য করতে পারেন? আসসালামু আলাইকুম। "
-    "Turn on the lights, switch off the fan."
+# Domain-informed English conditioning prompt to guide Whisper STT accuracy
+DEFAULT_ENGLISH_PROMPT = (
+    "English conversation with MAYA, a smart voice assistant. "
+    "Smart home IoT controls, device states, and queries: assist, deadlock, operating system, light, fan, switch on, turn off, schedule, timer, weather."
 )
+
+# Common meaningful English vocabulary sets to detect acoustic gibberish on short clips
+COMMON_EN = {
+    "i", "you", "he", "she", "it", "we", "they", "me", "my", "your",
+    "hi", "hello", "what", "how", "is", "are", "am", "was", "were", "can", "could", "the", "a", "an", "maya",
+    "light", "fan", "turn", "on", "off", "time", "date", "weather", "help", "who", "where", "why", "when",
+    "hey", "yes", "no", "ok", "sure", "fine", "please", "thanks", "thank", "switch", "open", "close"
+}
+
+
+def looks_like_real_speech(text: str) -> bool:
+    """Heuristic check: returns False if text appears to be acoustic nonsense/fragments."""
+    words = [w.strip(",.?!") for w in text.lower().split() if w.strip(",.?!")]
+    if not words:
+        return False
+    if len(words) == 1:
+        return len(words[0]) >= 2 and words[0] in COMMON_EN
+    meaningful_common = {w for w in COMMON_EN if len(w) > 1}
+    has_meaningful = any(w in meaningful_common for w in words)
+    short_ratio = sum(1 for w in words if len(w) <= 2) / len(words)
+    if short_ratio >= 0.50 and not has_meaningful:
+        return False
+    return True
+
 
 # Deterministic phonetic correction map for frequent acoustic misrecognitions
 PHONETIC_REPLACEMENTS = [
@@ -42,24 +63,26 @@ def repair_transcript(text: str) -> Tuple[str, bool]:
     for pattern, replacement in PHONETIC_REPLACEMENTS:
         cleaned = pattern.sub(replacement, cleaned)
 
-    # 2. Bengali Unicode normalization pass
-    cleaned = normalize_bangla_text(cleaned)
+    # 2. Basic whitespace normalization
+    cleaned = re.sub(r"\s+", " ", cleaned)
 
     # 3. Heuristic check for garbled speech fragments
-    # Common pattern: fragmented isolated Bangla vowels or broken syllables like "আ, গাটিট, এই এক্সলেন েল"
-    words = cleaned.split()
     is_garbled = False
-    if len(words) >= 4:
-        # Check if many words are single/two-character isolated fragments (e.g. >= 50%)
-        short_words = sum(1 for w in words if len(w.strip(",.?!")) <= 2)
-        if (short_words / len(words)) >= 0.50:
-            is_garbled = True
+    if not looks_like_real_speech(cleaned):
+        is_garbled = True
+    else:
+        words = cleaned.split()
+        if len(words) >= 4:
+            meaningful_common = {w for w in COMMON_EN if len(w) > 1}
+            short_words = sum(1 for w in words if len(w.strip(",.?!")) <= 2)
+            if (short_words / len(words)) >= 0.50 and not any(w.lower().strip(",.?!") in meaningful_common for w in words):
+                is_garbled = True
 
     return cleaned, is_garbled
 
 
 class WhisperSTT:
-    """Ultra-fast Speech-to-Text client using Groq Cloud Whisper Large V3 with automatic language detection."""
+    """Ultra-fast Speech-to-Text client using Groq Cloud Whisper Large V3 locked to English."""
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or settings.GROQ_API_KEY
@@ -73,7 +96,7 @@ class WhisperSTT:
 
     def _build_context_prompt(self, base_prompt: Optional[str] = None) -> str:
         """Compose conditioning prompt with active corrections from persistent memory."""
-        prompt_parts = [base_prompt or DEFAULT_MULTILINGUAL_PROMPT]
+        prompt_parts = [base_prompt or DEFAULT_ENGLISH_PROMPT]
 
         # Dynamically append confirmed user corrections to bias STT accuracy
         corrections = memory_store.get_corrections()
@@ -88,10 +111,10 @@ class WhisperSTT:
         pcm_bytes: bytes,
         sample_rate: int = 16000,
         prompt: Optional[str] = None,
-        language: Optional[str] = None,
+        language: Optional[str] = "en",
     ) -> Tuple[str, bool]:
         """
-        Transcribe raw 16kHz 16-bit Mono PCM audio to text (Bangla, English, or mixed).
+        Transcribe raw 16kHz 16-bit Mono PCM audio to English text.
         Returns: (transcribed_and_repaired_text, is_garbled)
         """
         if not self._client:
@@ -111,16 +134,15 @@ class WhisperSTT:
             wav_file.writeframes(pcm_bytes)
         wav_buffer.seek(0)
 
-        # Dispatch to Groq Cloud Whisper API
+        # Dispatch to Groq Cloud Whisper API (locked to English for ~150-250ms latency)
         kwargs = {
             "file": ("audio.wav", wav_buffer.read(), "audio/wav"),
             "model": "whisper-large-v3",
             "temperature": 0.0,
             "response_format": "text",
             "prompt": self._build_context_prompt(prompt),
+            "language": language or "en",
         }
-        if language:
-            kwargs["language"] = language
 
         raw_text = str(await self._client.audio.transcriptions.create(**kwargs)).strip()
         repaired_text, is_garbled = repair_transcript(raw_text)

@@ -2,6 +2,7 @@ import asyncio
 import collections
 import io
 import os
+import re
 import sys
 import time
 import wave
@@ -22,11 +23,11 @@ if sys.platform == "win32":
 if sys.platform == "win32":
     try:
         if sys.stdin:
-            sys.stdin.reconfigure(encoding="utf-8")
+            sys.stdin.reconfigure(encoding="utf-8", errors="replace")
         if sys.stdout:
-            sys.stdout.reconfigure(encoding="utf-8")
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         if sys.stderr:
-            sys.stderr.reconfigure(encoding="utf-8")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except AttributeError:
         pass
 
@@ -52,12 +53,16 @@ PRE_ROLL_FRAMES = 12    # ~360ms pre-speech buffer
 
 # Voice Endpointing: ~1.65s pause before assistant commits to answering
 SILENCE_PAUSE_SECONDS = settings.VAD_ENDPOINT_MS / 1000.0  # 1.65s default
+TRAILING_INCOMPLETE = re.compile(
+    r"\b(?:and|but|or|because|so|then|it'?s|that|with|to|of|for|as|if|when|while|like|i\s+mean)\s*$",
+    re.IGNORECASE,
+)
 SILENCE_FRAMES_THRESHOLD = max(10, int(SILENCE_PAUSE_SECONDS * 1000 / FRAME_MS))
 MIN_SPEECH_FRAMES = 10  # ~300ms minimum speech length
 MIN_RMS_THRESHOLD = 180.0
 
-# Higher threshold for barge-in to filter out speaker bleed-through
-BARGE_IN_RMS_THRESHOLD = 420.0
+# Lowered threshold to pick up conversational interruption without screaming
+BARGE_IN_RMS_THRESHOLD = float(os.getenv("BARGE_IN_RMS_THRESHOLD", "420.0"))
 
 
 def play_pcm_audio(pcm_bytes: bytes, sample_rate: int = SAMPLE_RATE, allow_bargein: bool = True) -> bool:
@@ -98,7 +103,7 @@ def play_pcm_audio(pcm_bytes: bytes, sample_rate: int = SAMPLE_RATE, allow_barge
 
                 if rms >= BARGE_IN_RMS_THRESHOLD and bargein_vad.is_speech(bytes(in_chunk), sample_rate):
                     consecutive_user_speech += 1
-                    if consecutive_user_speech >= 3:  # ~90ms of sustained user speech
+                    if consecutive_user_speech >= 2:  # ~60ms of intentional user interruption
                         print("\n🛑 [BARGE-IN TRIGGERED] (User interrupted speech)")
                         return True
                 else:
@@ -112,18 +117,27 @@ def play_pcm_audio(pcm_bytes: bytes, sample_rate: int = SAMPLE_RATE, allow_barge
     return False
 
 
-def record_continuous_vad() -> bytes:
-    """Passively listen until speech is detected, record until crisp endpoint pause, and return PCM audio."""
+def record_continuous_vad(is_continuation: bool = False, max_wait_seconds: Optional[float] = None) -> bytes:
+    """
+    Passively listen until speech is detected, record until crisp endpoint pause, and return PCM audio.
+    Adaptive Endpointing: Short utterances finalize in ~800ms, hesitant/longer speech gets full 1650ms.
+    """
     vad = webrtcvad.Vad(VAD_AGGRESSIVENESS)
     pre_roll = collections.deque(maxlen=PRE_ROLL_FRAMES)
     speech_chunks = []
     is_speaking = False
     consecutive_silence = 0
+    t_start = time.monotonic()
 
-    print("\n🎧 [LISTENING...] Speak naturally (or Ctrl+C to quit)...", end="", flush=True)
+    prompt_label = "🎧 [LISTENING...] Speak naturally (or Ctrl+C to quit)..." if not is_continuation else "⏳ [HOLDING...] (Waiting for you to finish your thought)..."
+    print(f"\n{prompt_label}", end="", flush=True)
 
     with sd.RawInputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=FRAME_SIZE) as stream:
         while True:
+            if is_continuation and not is_speaking and max_wait_seconds:
+                if (time.monotonic() - t_start) >= max_wait_seconds:
+                    return b""
+
             frame, _ = stream.read(FRAME_SIZE)
             frame_bytes = bytes(frame)
 
@@ -144,7 +158,16 @@ def record_continuous_vad() -> bytes:
                 speech_chunks.append(frame_bytes)
                 if not is_speech_frame:
                     consecutive_silence += 1
-                    if consecutive_silence >= SILENCE_FRAMES_THRESHOLD:
+
+                    # Adaptive silence endpointing:
+                    # Short turn (<1.2s speech): ~800ms silence threshold saves ~850ms of dead air
+                    # Long turn: full 1.65s silence threshold gives room to think
+                    if len(speech_chunks) < int(1.2 * 1000 / FRAME_MS):
+                        adaptive_threshold = max(8, int(0.80 * 1000 / FRAME_MS))
+                    else:
+                        adaptive_threshold = SILENCE_FRAMES_THRESHOLD
+
+                    if consecutive_silence >= adaptive_threshold:
                         if len(speech_chunks) >= MIN_SPEECH_FRAMES:
                             print("[Done]")
                             return b"".join(speech_chunks)
@@ -152,7 +175,7 @@ def record_continuous_vad() -> bytes:
                             is_speaking = False
                             speech_chunks.clear()
                             consecutive_silence = 0
-                            print("\r🎧 [LISTENING...] Speak naturally...", end="", flush=True)
+                            print(f"\r{prompt_label}", end="", flush=True)
                 else:
                     consecutive_silence = 0
 
@@ -223,7 +246,7 @@ async def process_user_turn(user_text: str, t_stt: float = 0.0) -> bool:
 
         async for sentence in brain_engine.generate_reply_sentences(user_text):
             s_clean = sentence.strip()
-            if not s_clean:
+            if not s_clean or not re.search(r"\w", s_clean):
                 continue
 
             if is_first_sentence:
@@ -271,26 +294,37 @@ async def process_user_turn(user_text: str, t_stt: float = 0.0) -> bool:
 
 async def main():
     print("=" * 65)
-    print("       MAYA: Multilingual AI Voice Assistant (Bangla & English)")
+    print("       MAYA: Siri-Grade English AI Voice Assistant")
     print(f"       Mode: Hands-Free Voice Engine (Endpoint: {settings.VAD_ENDPOINT_MS}ms, Barge-In: {settings.BARGE_IN_ENABLED})")
     print("=" * 65)
-    print("1. [V] Hands-Free Voice Mode (Speak naturally, auto silence detection) [Default]")
-    print("2. [T] Text Mode (Type in terminal, listen to spoken reply)")
-    print("3. [M] Manual Push-to-Talk Mode (Press Enter to start/stop)")
-    print("=" * 65)
 
-    try:
-        mode = input("Select mode (V / T / M) [default: V]: ").strip().lower()
-    except (KeyboardInterrupt, EOFError):
-        return
+    mode = None
+    if len(sys.argv) > 1:
+        arg = sys.argv[1].lower().strip().lstrip("-")
+        if arg in ("v", "voice", "handsfree", "hands-free"):
+            mode = "v"
+        elif arg in ("t", "text"):
+            mode = "t"
+        elif arg in ("m", "push", "manual", "ptt"):
+            mode = "m"
+
+    if not mode:
+        print("1. [V] Hands-Free Voice Mode (Speak naturally, auto silence detection) [Default]")
+        print("2. [T] Text Mode (Type in terminal, listen to spoken reply)")
+        print("3. [M] Manual Push-to-Talk Mode (Press Enter to start/stop)")
+        print("=" * 65)
+        try:
+            mode = input("Select mode (V / T / M) [default: V]: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            return
 
     if mode == "t":
-        print("\n[TEXT MODE] Type your message in Bangla or English (or 'exit' to quit):")
+        print("\n[TEXT MODE] Type your message in English (or 'exit' to quit):")
         while True:
             try:
                 user_msg = input("\nType message: ").strip()
                 if user_msg.lower() in ["exit", "quit", "q"]:
-                    print("Goodbye! / বিদায়! ভালো থাকবেন।")
+                    print("Goodbye! Have a great day.")
                     break
                 if not user_msg:
                     continue
@@ -311,7 +345,7 @@ async def main():
 
                 print("⏳ Transcribing speech via Groq Whisper...")
                 t_stt_start = time.perf_counter()
-                transcribed_text, is_garbled = await stt_client.transcribe_pcm(pcm_bytes)
+                transcribed_text, is_garbled = await stt_client.transcribe_pcm(pcm_bytes, language="en")
                 t_stt = (time.perf_counter() - t_stt_start) * 1000
                 print(f"   Transcribed in {t_stt:.1f}ms: '{transcribed_text}'")
 
@@ -320,12 +354,8 @@ async def main():
                     continue
 
                 if is_garbled:
-                    print("⚠️ [ASR TARGETED REPAIR] Flagged fragmented audio, asking for clarification...")
-                    clarification = (
-                        "আমি ঠিক বুঝতে পারিনি, আরেকবার একটু বুঝিয়ে বলবেন কি?"
-                        if any('\u0980' <= c <= '\u09ff' for c in transcribed_text)
-                        else "I didn't quite catch that. Could you say it once more?"
-                    )
+                    print("⚠️ [ASR TARGETED REPAIR] Flagged fragmented/gibberish audio, asking for clarification...")
+                    clarification = "I didn't quite catch that. Could you say it once more?"
                     print(f"\n🌸 MAYA: \"{clarification}\"")
                     pcm = await synthesize_speech_pcm(clarification)
                     play_pcm_audio(pcm, allow_bargein=False)
@@ -338,7 +368,7 @@ async def main():
     else:
         # Default: Continuous Hands-Free VAD with 1.65s comfortable pause tolerance
         print("\n✨ [HANDS-FREE VOICE ACTIVATED]")
-        print("   • Speak naturally in Bangla or English.")
+        print("   • Speak naturally in English.")
         print(f"   • Pause Tolerance: ~{settings.VAD_ENDPOINT_MS / 1000.0:.2f}s pause (you can pause/think without being interrupted).")
         print(f"   • Real-Time Barge-In: {'Enabled' if settings.BARGE_IN_ENABLED else 'Disabled'}")
         print("   • Press Ctrl+C anytime to exit.\n")
@@ -352,20 +382,26 @@ async def main():
 
                 print("⏳ Transcribing speech via Groq Whisper...")
                 t_stt_start = time.perf_counter()
-                transcribed_text, is_garbled = await stt_client.transcribe_pcm(pcm_bytes)
+                transcribed_text, is_garbled = await stt_client.transcribe_pcm(pcm_bytes, language="en")
                 t_stt = (time.perf_counter() - t_stt_start) * 1000
                 print(f"   Transcribed in {t_stt:.1f}ms: '{transcribed_text}'")
 
                 if not transcribed_text or not transcribed_text.strip():
                     continue
 
+                # Semantic Continuation: If transcript ends on an incomplete connector, don't cut off!
+                if TRAILING_INCOMPLETE.search(transcribed_text.strip()):
+                    print(" ⏳ [MID-THOUGHT PAUSE DETECTED] Holding for continuation...")
+                    more_pcm = record_continuous_vad(is_continuation=True, max_wait_seconds=2.5)
+                    if more_pcm and len(more_pcm) >= (SAMPLE_RATE * 2 * 0.3):
+                        more_text, _ = await stt_client.transcribe_pcm(more_pcm, language="en")
+                        if more_text and more_text.strip():
+                            transcribed_text = f"{transcribed_text.strip()} {more_text.strip()}"
+                            print(f"   Stitched transcript: '{transcribed_text}'")
+
                 if is_garbled:
-                    print("⚠️ [ASR TARGETED REPAIR] Flagged fragmented audio, asking for clarification...")
-                    clarification = (
-                        "আমি ঠিক বুঝতে পারিনি, আরেকবার একটু বুঝিয়ে বলবেন কি?"
-                        if any('\u0980' <= c <= '\u09ff' for c in transcribed_text)
-                        else "I didn't quite catch that. Could you say it once more?"
-                    )
+                    print("⚠️ [ASR TARGETED REPAIR] Flagged fragmented/gibberish audio, asking for clarification...")
+                    clarification = "I didn't quite catch that. Could you say it once more?"
                     print(f"\n🌸 MAYA: \"{clarification}\"")
                     pcm = await synthesize_speech_pcm(clarification)
                     play_pcm_audio(pcm, allow_bargein=False)
@@ -382,5 +418,5 @@ if __name__ == "__main__":
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         pass
-    print("\nGoodbye! / বিদায়! ভালো থাকবেন।")
+    print("\nGoodbye! Have a great day.")
     sys.exit(0)
