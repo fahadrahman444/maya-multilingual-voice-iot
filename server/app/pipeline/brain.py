@@ -546,8 +546,8 @@ class ConversationalBrain:
             is_first_tok = True
             while True:
                 try:
-                    # TTFT Watchdog: If Gemini stalls > 2.5s on first token, trip circuit & fail over to Groq immediately
-                    first_token_timeout = 2.5 if (prov == "gemini" and is_first_tok and self._groq_client) else 10.0
+                    # TTFT Watchdog: If Gemini stalls > 5.0s on first token, trip circuit & fail over to Groq immediately
+                    first_token_timeout = 5.0 if (prov == "gemini" and is_first_tok and self._groq_client) else 10.0
                     tok = await asyncio.wait_for(stream_gen.__anext__(), timeout=first_token_timeout)
                     is_first_tok = False
                     yield tok
