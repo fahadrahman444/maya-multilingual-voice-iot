@@ -43,7 +43,7 @@ class Settings:
     VOICE_PACE: float = float(os.getenv("VOICE_PACE", "1.0"))             # 0.8 to 1.2 rate multiplier
     VOICE_EXPRESSIVITY: str = os.getenv("VOICE_EXPRESSIVITY", "medium")   # low | medium | high
     VAD_ENDPOINT_MS: int = int(os.getenv("VAD_ENDPOINT_MS", "1650"))      # 1.65s comfortable pause tolerance
-    BARGE_IN_ENABLED: bool = os.getenv("BARGE_IN_ENABLED", "True").lower() in ("true", "1")
+    BARGE_IN_ENABLED: bool = os.getenv("BARGE_IN_ENABLED", "False").lower() in ("true", "1")
 
     # Speech Synthesis (Edge TTS) - English Voice Profile (Ava Neural)
     TTS_VOICE: str = os.getenv("TTS_VOICE", "en-US-AvaNeural")
