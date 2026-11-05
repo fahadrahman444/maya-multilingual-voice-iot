@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, AsyncGenerator
 from google import genai
 from google.genai import types as genai_types
-from groq import AsyncGroq
 from server.app.config import settings
 from server.app.pipeline.memory import memory_store
 
@@ -217,12 +216,9 @@ class ConversationalBrain:
         groq_api_key: Optional[str] = None,
         provider: Optional[str] = None,
     ):
-        self.provider = (provider or settings.BRAIN_PROVIDER).lower()
+        self.provider = "gemini"
         self.gemini_key = gemini_api_key or settings.GEMINI_API_KEY
-        self.groq_key = groq_api_key or settings.GROQ_API_KEY
-
         self._gemini_client: Optional[genai.Client] = None
-        self._groq_client: Optional[AsyncGroq] = None
 
         if self.gemini_key and self.gemini_key != "your_gemini_api_key_here":
             try:
@@ -230,19 +226,12 @@ class ConversationalBrain:
             except Exception as e:
                 print(f"⚠️ [BRAIN WARNING] Failed to initialize Gemini client: {e}")
 
-        if self.groq_key and self.groq_key != "your_groq_api_key_here":
-            try:
-                self._groq_client = AsyncGroq(api_key=self.groq_key)
-            except Exception as e:
-                print(f"⚠️ [BRAIN WARNING] Failed to initialize Groq client: {e}")
-
-        self.circuit_breaker = CircuitBreaker(failure_threshold=3, cooldown_seconds=60.0)
         self.sessions: Dict[str, SessionState] = {}
         self.memory = memory_store
 
     @property
     def is_configured(self) -> bool:
-        return (self._gemini_client is not None) or (self._groq_client is not None)
+        return self._gemini_client is not None
 
     def get_session(self, session_id: str = "default") -> SessionState:
         now = time.time()
@@ -374,7 +363,7 @@ class ConversationalBrain:
         if current_warm:
             prompt = f"Previous Context:\n{current_warm}\n\nRecent History:\n{convo_text}\n\nUpdate into 2 concise bullets:"
 
-        if self._gemini_client and self.circuit_breaker.can_attempt():
+        if self._gemini_client:
             try:
                 res = await self._gemini_client.aio.models.generate_content(
                     model=settings.GEMINI_MODEL,
@@ -391,24 +380,6 @@ class ConversationalBrain:
                     return
             except Exception as e:
                 logger.debug("Background Gemini context summarization skipped: %s", e)
-
-        if self._groq_client:
-            try:
-                res = await self._groq_client.chat.completions.create(
-                    model=settings.GROQ_MODEL,
-                    messages=[
-                        {"role": "system", "content": "You are a concise conversation context summarizer."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    max_tokens=75,
-                    temperature=0.3,
-                )
-                if res and res.choices and res.choices[0].message.content:
-                    summary_text = res.choices[0].message.content.strip()
-                    session.warm_summary = summary_text
-                    self.memory.set_warm_summary(summary_text)
-            except Exception as e:
-                logger.debug("Background Groq context summarization skipped: %s", e)
 
     async def _stream_gemini(self, system_prompt: str, user_text: str) -> AsyncGenerator[str, None]:
         """Stream raw tokens from Google Gemini."""
@@ -435,28 +406,6 @@ class ConversationalBrain:
         async for chunk in response:
             if chunk.text:
                 yield chunk.text
-
-    async def _stream_groq(self, system_prompt: str, user_text: str) -> AsyncGenerator[str, None]:
-        """Stream raw tokens from Groq Cloud."""
-        if not self._groq_client:
-            return
-
-        messages = [{"role": "system", "content": system_prompt}]
-        for turn in self.history[-6:]:
-            messages.append({"role": turn["role"], "content": turn["content"]})
-        messages.append({"role": "user", "content": user_text})
-
-        stream = await self._groq_client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=150,
-            stream=True,
-        )
-        async for chunk in stream:
-            content = chunk.choices[0].delta.content if chunk.choices else None
-            if content:
-                yield content
 
     async def generate_reply_sentences(
         self,
@@ -521,108 +470,58 @@ class ConversationalBrain:
 
         full_system_prompt = "\n\n".join(blocks)
 
-        # Determine primary and failover providers
-        active_provider = self.provider
-        if active_provider == "gemini" and not self.circuit_breaker.can_attempt():
-            if self._groq_client:
-                print("⚡ [CIRCUIT BREAKER ACTIVE] Primary Gemini circuit open -> auto routing to Groq.")
-                active_provider = "groq"
-            else:
-                active_provider = "gemini"
-
         buffer = ""
         is_first_sentence = True
         yielded_sentences_count = 0
         last_flush_time = time.monotonic()
         full_reply_parts = []
-
-        async def fetch_tokens(prov: str, custom_prompt: Optional[str] = None):
-            user_msg = custom_prompt or raw_clean
-            stream_gen = (
-                self._stream_gemini(full_system_prompt, user_msg)
-                if prov == "gemini"
-                else self._stream_groq(full_system_prompt, user_msg)
-            )
-            is_first_tok = True
-            while True:
-                try:
-                    # TTFT Watchdog: If Gemini stalls > 5.0s on first token, trip circuit & fail over to Groq immediately
-                    first_token_timeout = 5.0 if (prov == "gemini" and is_first_tok and self._groq_client) else 10.0
-                    tok = await asyncio.wait_for(stream_gen.__anext__(), timeout=first_token_timeout)
-                    is_first_tok = False
-                    yield tok
-                except StopAsyncIteration:
-                    break
-
-        # Attempt stream generation with mid-stream failover
-        provider_in_use = active_provider
         stream_success = False
 
-        for attempt in range(2):
-            try:
-                custom_user_msg = None
-                if attempt > 0 and yielded_sentences_count > 0:
-                    already_spoken = " ".join(full_reply_parts).strip()
-                    custom_user_msg = (
-                        f"The user asked: '{raw_clean}'. "
-                        f"You already started answering: '{already_spoken}'. "
-                        f"Conclude the thought in 1 concise English sentence without repeating:"
-                    )
+        try:
+            async for token in self._stream_gemini(full_system_prompt, raw_clean):
+                stream_success = True
+                full_reply_parts.append(token)
 
-                async for token in fetch_tokens(provider_in_use, custom_user_msg):
-                    stream_success = True
-                    full_reply_parts.append(token)
+                buffer += token
+                now = time.monotonic()
 
-                    buffer += token
-                    now = time.monotonic()
-
-                    # 1. Standard sentence boundary match on protected buffer
-                    while True:
-                        protected_buffer = protect_abbreviations(buffer)
-                        match = SENTENCE_REGEX.match(protected_buffer)
-                        if match:
-                            raw_sentence = unprotect(match.group(1).strip())
-                            buffer = buffer[match.end():]
-                            sentence = scrub_sentence(raw_sentence, is_first=is_first_sentence)
-                            if sentence and re.search(r"\w", sentence):
-                                is_first_sentence = False
-                                yielded_sentences_count += 1
-                                last_flush_time = now
-                                yield sentence
-                                if yielded_sentences_count >= 4:  # Siri brevity ceiling
-                                    buffer = ""
-                                    break
-                        else:
-                            break
-
-                    if yielded_sentences_count >= 4:
+                # 1. Standard sentence boundary match on protected buffer
+                while True:
+                    protected_buffer = protect_abbreviations(buffer)
+                    match = SENTENCE_REGEX.match(protected_buffer)
+                    if match:
+                        raw_sentence = unprotect(match.group(1).strip())
+                        buffer = buffer[match.end():]
+                        sentence = scrub_sentence(raw_sentence, is_first=is_first_sentence)
+                        if sentence and re.search(r"\w", sentence):
+                            is_first_sentence = False
+                            yielded_sentences_count += 1
+                            last_flush_time = now
+                            yield sentence
+                            if yielded_sentences_count >= 4:  # Siri brevity ceiling
+                                buffer = ""
+                                break
+                    else:
                         break
 
-                    # 2. Timeout Flush: if no boundary for >400ms and buffer is substantial
-                    if (now - last_flush_time >= 0.40 and len(buffer) >= 28) or len(buffer) >= 180:
-                        protected_buffer = protect_abbreviations(buffer)
-                        clause_match = re.search(r"^(.*?[\,\;\:\—\-])\s+(.*)$", protected_buffer, re.DOTALL)
-                        if clause_match:
-                            clause_raw = unprotect(clause_match.group(1).strip())
-                            buffer = buffer[clause_match.end(1):].lstrip()
-                            clause = scrub_sentence(clause_raw, is_first=is_first_sentence)
-                            if clause and re.search(r"\w", clause):
-                                is_first_sentence = False
-                                last_flush_time = now
-                                yield clause
+                if yielded_sentences_count >= 4:
+                    break
 
-                if provider_in_use == "gemini":
-                    self.circuit_breaker.record_success()
-                break  # Completed successfully
+                # 2. Timeout Flush: if no boundary for >400ms and buffer is substantial
+                if (now - last_flush_time >= 0.40 and len(buffer) >= 28) or len(buffer) >= 180:
+                    protected_buffer = protect_abbreviations(buffer)
+                    clause_match = re.search(r"^(.*?[\,\;\:\—\-])\s+(.*)$", protected_buffer, re.DOTALL)
+                    if clause_match:
+                        clause_raw = unprotect(clause_match.group(1).strip())
+                        buffer = buffer[clause_match.end(1):].lstrip()
+                        clause = scrub_sentence(clause_raw, is_first=is_first_sentence)
+                        if clause and re.search(r"\w", clause):
+                            is_first_sentence = False
+                            last_flush_time = now
+                            yield clause
 
-            except Exception as err:
-                print(f"\n⚠️ [BRAIN WARNING] Provider '{provider_in_use}' error: {repr(err)}")
-                if provider_in_use == "gemini":
-                    self.circuit_breaker.record_failure()
-
-                provider_in_use = "groq" if provider_in_use == "gemini" else "gemini"
-                print(f"🔄 [BRAIN FAILOVER] Resuming via '{provider_in_use}'...")
-                last_flush_time = time.monotonic()
+        except Exception as err:
+            print(f"\n⚠️ [BRAIN ERROR] Gemini stream error: {repr(err)}")
 
         # Flush any remaining buffer text
         trailing = unprotect(protect_abbreviations(buffer.strip()))
@@ -633,7 +532,7 @@ class ConversationalBrain:
 
         full_reply = "".join(full_reply_parts).strip()
 
-        # Emergency fallback if all providers completely failed
+        # Emergency fallback if Gemini completely failed
         if not stream_success or not full_reply:
             yield "I'm listening, feel free to continue."
             return
