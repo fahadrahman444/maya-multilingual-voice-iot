@@ -160,13 +160,8 @@ def record_continuous_vad(is_continuation: bool = False, max_wait_seconds: Optio
                 if not is_speech_frame:
                     consecutive_silence += 1
 
-                    # Adaptive silence endpointing:
-                    # Short turn (<1.2s speech): ~800ms silence threshold saves ~850ms of dead air
-                    # Long turn: full 1.65s silence threshold gives room to think
-                    if len(speech_chunks) < int(1.2 * 1000 / FRAME_MS):
-                        adaptive_threshold = max(8, int(0.80 * 1000 / FRAME_MS))
-                    else:
-                        adaptive_threshold = SILENCE_FRAMES_THRESHOLD
+                    # Respect full silence threshold (e.g. 1.65s) so user is never cut off mid-thought
+                    adaptive_threshold = SILENCE_FRAMES_THRESHOLD
 
                     if consecutive_silence >= adaptive_threshold:
                         if len(speech_chunks) >= MIN_SPEECH_FRAMES:
