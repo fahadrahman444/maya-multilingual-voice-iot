@@ -1,6 +1,2 @@
 @echo off
-chcp 65001 >nul
-set PYTHONUTF8=1
-set PYTHONIOENCODING=utf-8
-cd /d "%~dp0server"
-call run_windows.bat
+call "%~dp0run_cascaded.bat" %*

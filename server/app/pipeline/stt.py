@@ -46,6 +46,7 @@ PHONETIC_REPLACEMENTS = [
     (re.compile(r"\bcould\s+you\s+acid\b", re.I), "could you assist"),
     (re.compile(r"\bplease\s+acid\b", re.I), "please assist"),
     (re.compile(r"\bacid\s+with\b", re.I), "assist with"),
+    (re.compile(r"\bdad\s*lock\b", re.I), "deadlock"),
 ]
 
 
