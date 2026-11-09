@@ -43,10 +43,10 @@ CHANNELS = 1
 MODEL_ID = "gemini-3.8-live"
 
 # ==========================================
-# Simulated Physical IoT Hardware Tools
+# Simulated Physical IoT Appliance Relay Tool
 # ==========================================
 def control_appliance(appliance: str, state: str) -> str:
-    """Switch physical smart home appliances (e.g. light, fan, relay).
+    """Switch physical smart home appliances (e.g. light, fan, lamp).
     Args:
         appliance: Name of appliance (e.g., 'light', 'fan', 'lamp').
         state: 'on' or 'off'.
@@ -61,80 +61,56 @@ def control_appliance(appliance: str, state: str) -> str:
     print(f"   Pin State : GPIO 21 -> {state_upper}")
     print(f"   Status    : 5V Relay clicked successfully")
     print("=" * 54 + "\n")
-    return f"{appliance_clean} has been turned {state.lower()}."
+    return f"{appliance_clean} has been switched {state.lower()}."
 
 
 def trigger_head_gesture(gesture: str) -> str:
-    """Animate physical tabletop robot 2-DOF neck servos.
-    Args:
-        gesture: One of 'nod_yes', 'shake_no', 'cock_curious', 'look_up', 'center'.
-    """
+    """Animate physical tabletop robot 2-DOF neck servos."""
     gesture_clean = gesture.lower()
-    gesture_desc = {
-        "nod_yes": "Nodding head up & down (Pitch: 125°, Yaw: 90°)",
-        "shake_no": "Shaking head left & right (Pitch: 90°, Yaw: 60°/120°)",
-        "cock_curious": "Tilting head curiously (Pitch: 115°, Yaw: 110°)",
-        "look_up": "Looking up at user (Pitch: 130°, Yaw: 90°)",
-        "center": "Resetting head to neutral center (Pitch: 90°, Yaw: 90°)",
-    }.get(gesture_clean, f"Custom motion: {gesture_clean}")
-
-    print("\n" + "=" * 54)
-    print("🤖 [ROBOT NECK SERVO GESTURE] 🦾")
-    print(f"   Action  : {gesture_clean.upper()}")
-    print(f"   Servos  : MG90S PWM on GPIO 13/14")
-    print(f"   Details : {gesture_desc}")
-    print("=" * 54 + "\n")
+    print(f"🤖 [ROBOT GESTURE] Motion: {gesture_clean.upper()} on GPIO 13/14")
     return f"Robot performed gesture {gesture_clean}."
 
 
 def set_facial_expression(expression: str) -> str:
-    """Set animated eye expression on the 0.96 inch I2C OLED display.
-    Args:
-        expression: One of 'happy', 'listening', 'sleeping', 'curious', 'neutral'.
-    """
+    """Set animated eye expression on the 0.96 inch OLED."""
     expr_clean = expression.lower()
-    eyes_art = {
-        "happy":     "   ( ^  _  ^ )   [Happy / Smiling]",
-        "listening": "   ( O  _  O )   [Listening Attentively]",
-        "sleeping":  "   ( -  _  - )   [Idle / Sleeping]",
-        "curious":   "   ( O  _  o )   [Curious / Cocked]",
-        "neutral":   "   ( •  _  • )   [Neutral Standby]",
-    }.get(expr_clean, "   ( •  _  • )")
-
-    print("\n" + "=" * 54)
-    print("👁️ [OLED EYE EXPRESSION] (SSD1306)")
-    print(f"   Expression : {expr_clean.upper()}")
-    print(f"   Face Canvas:\n{eyes_art}")
-    print("=" * 54 + "\n")
+    show_robot_expression(expr_clean)
     return f"OLED eyes updated to {expr_clean}."
+
+
+def show_robot_expression(expression: str):
+    """Render simulated OLED eye expression and head posture."""
+    eyes_art = {
+        "happy":     "( ^  _  ^ )  [Happy / Speaking]",
+        "listening": "( O  _  O )  [Listening Attentively]",
+        "sleeping":  "( -  _  - )  [Idle Standby]",
+        "curious":   "( O  _  o )  [Curious / Cocked]",
+    }.get(expression, "( •  _  • )")
+    print(f"\n👁️  OLED Face: {eyes_art}")
 
 
 TOOL_FUNCTIONS = {
     "control_appliance": control_appliance,
-    "trigger_head_gesture": trigger_head_gesture,
-    "set_facial_expression": set_facial_expression,
 }
 
-SYSTEM_INSTRUCTION = """You are MAYA, an intelligent, empathetic, Siri-grade English voice companion and smart home IoT tabletop robot.
+SYSTEM_INSTRUCTION = """You are MAYA, an intelligent, empathetic, Siri-grade English voice companion and tabletop robot.
 
-Key Guidelines:
-1. Speak in natural, concise, warm English.
-2. Keep spoken replies brief and direct (1-3 sentences) suitable for a real-time voice assistant.
-3. You have physical hardware actuators you can control at any time via tools:
-   - Use `control_appliance` to turn on/off appliances like lights, lamps, or fans when requested.
-   - Use `trigger_head_gesture` (nod_yes, shake_no, cock_curious, look_up, center) to expressively move your robotic head while conversing.
-   - Use `set_facial_expression` (happy, listening, curious, neutral) to change your OLED eye expressions.
-4. Feel free to naturally combine physical gestures and speech when helpful (e.g. nodding while saying 'Certainly, turning on the light for you')."""
+Core Behaviors:
+1. Speak in warm, conversational, natural English.
+2. ALWAYS provide a spoken voice answer in every single turn.
+3. Keep spoken replies concise and direct (1-3 sentences) suitable for natural voice conversation.
+4. You have access to the `control_appliance` tool to switch lights or fans on/off when the user explicitly asks.
+5. When you execute an appliance tool, always speak a brief, friendly verbal confirmation (e.g., 'I have turned on the desk light for you.')."""
 
 
 async def run_live_assistant():
     print("\n" + "═" * 60)
-    print("  🌸 MAYA: Gemini Live Voice Assistant & IoT Gateway (Laptop Prototype)")
+    print("  🌸 MAYA: Gemini Live Voice Assistant (Laptop Prototype)")
     print("═" * 60)
     print(f"  🧠 Model      : {MODEL_ID}")
     print(f"  🎙️ Microphone : 16 kHz Mono (Laptop Mic via SoundDevice)")
     print(f"  🔊 Speaker    : 24 kHz Mono (Laptop Speaker via SoundDevice)")
-    print(f"  ⚡ IoT Engine : Active (Simulating Relay, Servos, OLED)")
+    print(f"  ⚡ IoT Engine : 5V Appliance Relay Tool Active")
     print(f"  🛑 Barge-In   : Full-Duplex Native Interruption Supported")
     print("═" * 60)
     print("  Press Ctrl+C at any time to exit.\n")
@@ -147,7 +123,7 @@ async def run_live_assistant():
     # Initialize Client with 30s timeout
     client = genai.Client(api_key=api_key, http_options={"timeout": 30000})
 
-    # Configure Live Session
+    # Configure Live Session with AUDIO modality
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
@@ -156,7 +132,7 @@ async def run_live_assistant():
             )
         ),
         system_instruction=SYSTEM_INSTRUCTION,
-        tools=[control_appliance, trigger_head_gesture, set_facial_expression],
+        tools=[control_appliance],
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
     )
@@ -167,7 +143,7 @@ async def run_live_assistant():
     is_speaking = False
 
     def mic_callback(indata, frames, time_info, status):
-        # Put raw int16 PCM bytes into input queue
+        # Forward raw int16 PCM bytes to input queue
         loop.call_soon_threadsafe(input_queue.put_nowait, bytes(indata))
 
     # Initialize SoundDevice streams
@@ -178,11 +154,11 @@ async def run_live_assistant():
         blocksize=CHUNK_SIZE,
         callback=mic_callback,
     )
+    # Output stream with system-default buffer for glitch-free playback
     output_stream = sd.RawOutputStream(
         samplerate=OUTPUT_SAMPLE_RATE,
         channels=CHANNELS,
         dtype="int16",
-        blocksize=CHUNK_SIZE,
     )
 
     # Retry loop for connection handshake
@@ -195,6 +171,7 @@ async def run_live_assistant():
             async with client.aio.live.connect(model=MODEL_ID, config=config) as session:
                 connected = True
                 print("✅ [CONNECTED] Gemini Live is active! Start speaking naturally.\n")
+                show_robot_expression("listening")
 
                 # Start audio hardware streams only after successful connection
                 input_stream.start()
@@ -205,12 +182,12 @@ async def run_live_assistant():
                     try:
                         while True:
                             pcm_data = await input_queue.get()
-                            # Acoustic Echo Suppression: When assistant is speaking,
-                            # ignore low-level mic audio so speaker output doesn't self-interrupt
+                            # Acoustic Echo Suppression:
+                            # While MAYA is speaking, duck mic energy unless user speaks loudly (barge-in)
                             if is_speaking:
                                 audio_arr = np.frombuffer(pcm_data, dtype=np.int16)
                                 rms = float(np.sqrt(np.mean(np.square(audio_arr.astype(np.float32)))))
-                                if rms < 1500.0:
+                                if rms < 1600.0:
                                     continue
 
                             await session.send_realtime_input(
@@ -224,7 +201,7 @@ async def run_live_assistant():
                     nonlocal is_speaking
                     try:
                         async for response in session.receive():
-                            # A. Handle Tool Calls from Gemini (Batched Response)
+                            # A. Handle Tool Calls from Gemini
                             if response.tool_call and response.tool_call.function_calls:
                                 tool_responses = []
                                 for fc in response.tool_call.function_calls:
@@ -247,7 +224,6 @@ async def run_live_assistant():
                                         )
                                     )
 
-                                # Send all tool responses in a single batch
                                 await session.send_tool_response(function_responses=tool_responses)
 
                             server_content = response.server_content
@@ -256,7 +232,8 @@ async def run_live_assistant():
 
                             # B. Native Barge-In: User interrupted speech
                             if server_content.interrupted:
-                                print("\n🛑 [BARGE-IN] You interrupted MAYA — listening to you...")
+                                print("\n🛑 [BARGE-IN] You spoke — listening to you...")
+                                show_robot_expression("curious")
                                 # Flush outbound playback queue
                                 while not audio_out_queue.empty():
                                     try:
@@ -288,6 +265,12 @@ async def run_live_assistant():
                                     except Exception:
                                         pass
 
+                            # E. Print assistant speaking tag
+                            if server_content.output_transcription:
+                                asst_text = server_content.output_transcription.text
+                                if asst_text:
+                                    print(f"🤖 Maya: {asst_text.strip()}")
+
                     except asyncio.CancelledError:
                         pass
                     except Exception as e:
@@ -300,7 +283,7 @@ async def run_live_assistant():
                         while True:
                             audio_data = await audio_out_queue.get()
                             is_speaking = True
-                            # Write audio chunk to speaker in non-blocking thread
+                            # Write raw PCM chunk directly to speaker
                             await asyncio.to_thread(output_stream.write, audio_data)
                             if audio_out_queue.empty():
                                 await asyncio.sleep(0.12)
