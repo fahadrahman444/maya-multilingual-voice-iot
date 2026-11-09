@@ -205,6 +205,14 @@ async def run_live_assistant():
                     try:
                         while True:
                             pcm_data = await input_queue.get()
+                            # Acoustic Echo Suppression: When assistant is speaking,
+                            # ignore low-level mic audio so speaker output doesn't self-interrupt
+                            if is_speaking:
+                                audio_arr = np.frombuffer(pcm_data, dtype=np.int16)
+                                rms = float(np.sqrt(np.mean(np.square(audio_arr.astype(np.float32)))))
+                                if rms < 1500.0:
+                                    continue
+
                             await session.send_realtime_input(
                                 audio={"data": pcm_data, "mime_type": "audio/pcm"}
                             )
@@ -216,8 +224,9 @@ async def run_live_assistant():
                     nonlocal is_speaking
                     try:
                         async for response in session.receive():
-                            # A. Handle Tool Calls from Gemini
+                            # A. Handle Tool Calls from Gemini (Batched Response)
                             if response.tool_call and response.tool_call.function_calls:
+                                tool_responses = []
                                 for fc in response.tool_call.function_calls:
                                     fn_name = fc.name
                                     fn_args = fc.args or {}
@@ -230,16 +239,16 @@ async def run_live_assistant():
                                     else:
                                         result = f"Unknown tool: {fn_name}"
 
-                                    # Send tool response back to Gemini session
-                                    await session.send_tool_response(
-                                        function_responses=[
-                                            types.FunctionResponse(
-                                                name=fn_name,
-                                                id=fc.id,
-                                                response={"output": result},
-                                            )
-                                        ]
+                                    tool_responses.append(
+                                        types.FunctionResponse(
+                                            name=fn_name,
+                                            id=fc.id,
+                                            response={"result": result},
+                                        )
                                     )
+
+                                # Send all tool responses in a single batch
+                                await session.send_tool_response(function_responses=tool_responses)
 
                             server_content = response.server_content
                             if server_content is None:
@@ -259,7 +268,6 @@ async def run_live_assistant():
 
                             # C. Process generated audio chunks and text
                             if server_content.model_turn:
-                                is_speaking = True
                                 for part in server_content.model_turn.parts:
                                     if part.inline_data:
                                         audio_out_queue.put_nowait(part.inline_data.data)
@@ -287,11 +295,17 @@ async def run_live_assistant():
 
                 # Worker 3: Audio Output Playback Stream
                 async def play_audio_worker():
+                    nonlocal is_speaking
                     try:
                         while True:
                             audio_data = await audio_out_queue.get()
+                            is_speaking = True
                             # Write audio chunk to speaker in non-blocking thread
                             await asyncio.to_thread(output_stream.write, audio_data)
+                            if audio_out_queue.empty():
+                                await asyncio.sleep(0.12)
+                                if audio_out_queue.empty():
+                                    is_speaking = False
                     except asyncio.CancelledError:
                         pass
 
