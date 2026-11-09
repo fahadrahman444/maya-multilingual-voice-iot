@@ -208,11 +208,19 @@ void servoLoopTask(void* pvParameters) {
     // Smooth linear interpolation to target angle (prevents sudden servo jerks)
     if (current_pan != target_pan) {
       current_pan += (target_pan > current_pan) ? 1 : -1;
+#if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+      ledcWrite(PIN_SERVO_PAN, angleToDuty(current_pan));
+#else
       ledcWrite(CHANNEL_PAN, angleToDuty(current_pan));
+#endif
     }
     if (current_tilt != target_tilt) {
       current_tilt += (target_tilt > current_tilt) ? 1 : -1;
+#if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+      ledcWrite(PIN_SERVO_TILT, angleToDuty(current_tilt));
+#else
       ledcWrite(CHANNEL_TILT, angleToDuty(current_tilt));
+#endif
     }
     vTaskDelay(pdMS_TO_TICKS(15)); // 15ms per step
   }
@@ -231,7 +239,14 @@ void setup() {
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   draw_eyes("sleeping");
 
-  // Initialize LEDC PWM for Servos
+  // Initialize LEDC PWM for Servos (handles Arduino ESP32 Core 2.x and 3.x)
+#if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+  ledcAttach(PIN_SERVO_PAN, PWM_FREQ, PWM_RESOLUTION);
+  ledcWrite(PIN_SERVO_PAN, angleToDuty(90));
+
+  ledcAttach(PIN_SERVO_TILT, PWM_FREQ, PWM_RESOLUTION);
+  ledcWrite(PIN_SERVO_TILT, angleToDuty(90));
+#else
   ledcSetup(CHANNEL_PAN, PWM_FREQ, PWM_RESOLUTION);
   ledcAttachPin(PIN_SERVO_PAN, CHANNEL_PAN);
   ledcWrite(CHANNEL_PAN, angleToDuty(90));
@@ -239,6 +254,7 @@ void setup() {
   ledcSetup(CHANNEL_TILT, PWM_FREQ, PWM_RESOLUTION);
   ledcAttachPin(PIN_SERVO_TILT, CHANNEL_TILT);
   ledcWrite(CHANNEL_TILT, angleToDuty(90));
+#endif
 
   // Initialize I2S Audio Interfaces
   init_i2s_microphone();

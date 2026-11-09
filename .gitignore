@@ -32,3 +32,9 @@ server/data/*.tmp
 
 # Test audio outputs
 server/tests/output/
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+*.ino.cpp
