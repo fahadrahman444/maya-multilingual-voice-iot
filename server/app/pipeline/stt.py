@@ -7,11 +7,15 @@ from groq import AsyncGroq
 from server.app.config import settings
 from server.app.pipeline.memory import memory_store
 
-# Domain-informed English conditioning prompt to guide Whisper STT accuracy
-DEFAULT_ENGLISH_PROMPT = (
-    "English conversation with MAYA, a smart voice assistant. "
-    "Smart home IoT controls, device states, and queries: assist, deadlock, operating system, light, fan, switch on, turn off, schedule, timer, weather."
-)
+# Clean English conditioning prompt without full sentences (prevents Whisper prompt-hallucination)
+DEFAULT_ENGLISH_PROMPT = "Maya, voice assistant."
+
+# Known Whisper hallucinations when audio is faint or silent
+HALLUCINATIONS = {
+    "thank you for watching", "thanks for watching", "smart home iot controls",
+    "device states and queries", "subtitles by", "translated by", "subscribe",
+    "smart home iot controls, device states, and queries.", "thank you.", "bye."
+}
 
 # Common meaningful English vocabulary sets to detect acoustic gibberish on short clips
 COMMON_EN = {
@@ -59,6 +63,10 @@ def repair_transcript(text: str) -> Tuple[str, bool]:
         return "", False
 
     cleaned = text.strip()
+
+    # Reject known hallucination patterns on silence
+    if cleaned.lower().strip(".,!?") in HALLUCINATIONS or "smart home iot controls" in cleaned.lower():
+        return "", False
 
     # 1. Phonetic replacement
     for pattern, replacement in PHONETIC_REPLACEMENTS:
@@ -125,6 +133,17 @@ class WhisperSTT:
 
         if not pcm_bytes:
             return "", False
+
+        # Automatic Gain Normalization & DC Offset Removal for clear Whisper ASR
+        import numpy as np
+        arr = np.frombuffer(pcm_bytes[: (len(pcm_bytes) // 2) * 2], dtype=np.int16).astype(np.float32)
+        if len(arr) > 0:
+            arr -= np.mean(arr)
+            peak = float(np.max(np.abs(arr)))
+            if peak > 30.0:
+                gain = min(16000.0 / peak, 25.0)
+                arr *= gain
+            pcm_bytes = np.clip(arr, -32768, 32767).astype(np.int16).tobytes()
 
         # Wrap raw PCM frames in standard WAV container in-memory
         wav_buffer = io.BytesIO()

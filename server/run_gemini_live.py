@@ -36,6 +36,7 @@ from google.genai import types
 
 from server.app.config import settings
 from server.app.pipeline.safety import evaluate_crisis_guardrail
+from server.app.pipeline.esp32_bridge import esp32_bridge
 
 # Audio parameters
 INPUT_SAMPLE_RATE = 16000    # Mic input to Gemini Live
@@ -44,13 +45,13 @@ CHUNK_SIZE = 1024            # ~64ms per frame (1024 / 16000)
 CHANNELS = 1
 
 # VAD Noise Gating & Audio Pipeline Tuning
-RMS_VOICE_THRESHOLD = 160.0       # Minimum RMS energy to qualify as human voice vs room noise
-BARGE_IN_RMS_THRESHOLD = 850.0    # RMS needed to interrupt Maya while speakers are playing
+RMS_VOICE_THRESHOLD = 110.0       # Minimum RMS energy to qualify as human voice vs ambient room noise
+BARGE_IN_RMS_THRESHOLD = 2000.0   # RMS needed to interrupt Maya (must exceed laptop speaker acoustic echo)
 
 # Sentence boundary regex supporting English and Indic/Bangla punctuation (।, ?, !, ., \n)
 SENTENCE_SPLIT_PATTERN = re.compile(r"([^.!?।\n]+(?:[.!?।\n]+|\n{2,}))(?:\s+|$)", re.UNICODE)
 
-# Model configuration with fallback option
+# Model configuration with production Gemini Live bidi S2S model
 MODEL_ID = os.getenv("GEMINI_LIVE_MODEL", getattr(settings, "GEMINI_LIVE_MODEL", "gemini-3.8-live"))
 
 
@@ -58,15 +59,35 @@ MODEL_ID = os.getenv("GEMINI_LIVE_MODEL", getattr(settings, "GEMINI_LIVE_MODEL",
 # Real-Time Web & Knowledge Search Tool
 # ==========================================
 def search_web(query: str) -> str:
-    """Search Google, Wikipedia, and the web for live real-time information, people, songs, videos, news, and facts.
+    """Search Google, Wikipedia, and the web for live real-time information, weather, people, songs, videos, news, and facts.
     Args:
         query: The search keywords (e.g. 'Murtaza Kizilbash singer', 'weather in Dhaka', 'latest news').
     """
     clean_q = query.strip()
     print(f"\n🔍 [WEB SEARCH] Query: '{clean_q}'...")
+
+    # 1. Specialized Handler: Live Weather Forecast
+    if any(k in clean_q.lower() for k in ["weather", "temperature", "forecast", "rain"]):
+        try:
+            import urllib.request
+            city = "Dhaka"
+            for word in ["dhaka", "chittagong", "sylhet", "rajshahi", "khulna", "barisal", "rangpur", "bangladesh"]:
+                if word in clean_q.lower():
+                    city = word if word != "bangladesh" else "Dhaka"
+                    break
+            url = f"https://wttr.in/{city}?format=%l:+%C,+%t+(feels+like+%f),+humidity+%h"
+            req = urllib.request.Request(url, headers={"User-Agent": "curl/7.68.0"})
+            with urllib.request.urlopen(req, timeout=3) as r:
+                weather_info = r.read().decode("utf-8").strip()
+                if weather_info:
+                    print(f"   ✓ Live Weather: {weather_info}\n")
+                    return f"Live weather report: {weather_info}"
+        except Exception:
+            pass
+
     results = []
 
-    # 1. Primary: DuckDuckGo Web Search
+    # 2. Primary: DuckDuckGo Web Search
     try:
         from ddgs import DDGS
         with DDGS() as ddgs:
@@ -180,6 +201,9 @@ def control_appliance(appliance: str, state: str) -> str:
     appliance_clean = appliance.capitalize()
     color_symbol = "🟢" if state.lower() == "on" else "🔴"
 
+    # Send actuation command to physical ESP32 relay
+    esp32_bridge.control_relay(state.lower() == "on")
+
     print("\n" + "=" * 54)
     print(f"⚡ [IOT RELAY ACTUATION] {color_symbol}")
     print(f"   Appliance : {appliance_clean}")
@@ -192,6 +216,7 @@ def control_appliance(appliance: str, state: str) -> str:
 def trigger_head_gesture(gesture: str) -> str:
     """Animate physical tabletop robot 2-DOF neck servos."""
     gesture_clean = gesture.lower()
+    esp32_bridge.trigger_gesture(gesture_clean)
     print(f"🤖 [ROBOT GESTURE] Motion: {gesture_clean.upper()} on GPIO 13/14")
     return f"Robot performed gesture {gesture_clean}."
 
@@ -199,6 +224,7 @@ def trigger_head_gesture(gesture: str) -> str:
 def set_facial_expression(expression: str) -> str:
     """Set animated eye expression on the 0.96 inch OLED."""
     expr_clean = expression.lower()
+    esp32_bridge.set_expression(expr_clean)
     show_robot_expression(expr_clean)
     return f"OLED eyes updated to {expr_clean}."
 
@@ -223,7 +249,7 @@ TOOL_FUNCTIONS = {
     "stop_music": stop_music,
 }
 
-SYSTEM_INSTRUCTION = """You are MAYA, an intelligent, empathetic, culturally attuned Siri-grade voice companion and tabletop robot.
+SYSTEM_INSTRUCTION = """You are MAYA (মায়া), an intelligent, empathetic, culturally attuned Siri-grade voice companion and IoT tabletop robot proudly rooted in Bangladesh.
 
 Key Conversational Principles:
 1. Warm, Conversational Spoken Voice:
@@ -231,44 +257,65 @@ Key Conversational Principles:
    - Enforce strict brevity: 1–3 concise sentences per turn suitable for a real-time voice assistant.
    - Never use markdown formatting, bullet points, asterisks, or corporate robotic filler (e.g., 'Certainly!', 'I would be happy to').
 
-2. Multilingual Fluency & Language Stickiness:
-   - You speak English, Bangla (বাংলা), and Hindi (हिन्दी) fluently and idiomatically.
-   - Language Stickiness: Once the user speaks in a specific language (e.g., Bangla), stay locked in that language. Never drift into Hindi or English unless the user switches first or explicitly asks.
+2. Multilingual Fluency & Language Stickiness (Bangla, Banglish, English, Hindi):
+   - You speak Bangla (বাংলা), Banglish (mixed Bangla-English), English, and Hindi (हिन्दी) fluently and idiomatically.
+   - Language Stickiness: When the user speaks in Bangla, respond in natural, beautiful Bangla. If they speak in English or Banglish, match their language. Stay locked in that language unless they switch first.
 
-3. Ongoing Conversation Continuity (No Repeat Greeting Loops):
+3. Complete Bangladeshi Cultural & Regional Mastery:
+   - You are a Bangladeshi AI companion deployed in Dhaka, Bangladesh (UTC+6 / BST).
+   - You have deep, effortless knowledge of all aspects of Bangladesh:
+     * Geography & Cities: Dhaka (Gulshan, Dhanmondi, Mirpur, Uttara, Vatara, Old Dhaka), Chittagong, Sylhet, Cox's Bazar, Rajshahi, Khulna, Barishal, Rangpur, Sundarbans, Padma Bridge, Metro Rail.
+     * Cuisine & Daily Life: Kacchi Biryani, Ilish (Hilsa) fish, Bhorta, Panta Ilish, Fuchka, Chotpoti, Mishti Doi, Roshogolla, Tonger Cha, Rickshaws, CNGs.
+     * Culture, Festivals & Holidays: Pohela Boishakh, Eid-ul-Fitr, Eid-ul-Adha, Durga Puja, Victory Day (16 December), Independence Day (26 March), Language Day (21 February / Ekushey).
+     * Sports & Icons: Bangladesh National Cricket Team (Tigers), BPL, Shakib Al Hasan, Tamim, Mushfiqur; Music legends James, LRB, Ayub Bachchu, Miles, Warfaze, Artcell, Rabindranath, Kazi Nazrul Islam, Lalon.
+     * Education & Academia: UITS (University of Information Technology and Sciences), DU, BUET, NSU, BRAC, IUT, SUST, HSC, SSC, BCS.
+     * Units & Currency: Current local time is always Bangladesh Standard Time (BST, UTC+6). Currency is Bangladeshi Taka (BDT / ৳). Temperature is in Celsius (°C).
+
+4. Ongoing Conversation Continuity (No Repeat Greeting Loops):
    - You are in an active, ongoing conversation session.
    - Greet only at the very start of the session.
-   - If the user repeats 'Hello', 'Hi', or 'Hey Maya' mid-conversation, do NOT reset into an opening greeting template like 'Hello! How can I help you today?'. Acknowledge them naturally (e.g., 'Yes, I am right here. What is on your mind?').
+   - If the user repeats 'Hello', 'Hi', or 'Hey Maya' mid-conversation, do NOT reset into an opening greeting template. Acknowledge them naturally (e.g., 'Yes, I am right here. What is on your mind?').
 
-4. Repetition Awareness & Deepening Dialogue:
-   - If the user asks the exact same question or touches the same theme 2 or more times (e.g., questions about race, marriage preferences, or repetitive hypothetical dilemmas), do not simply repeat the same canned answer.
-   - Acknowledge the repetition gently and explore the underlying feeling: e.g., 'I notice you have asked this a few times—is there something specific weighing on your mind that you would like to talk through?'
-
-5. Safety First for Household Distress & Substance Abuse:
-   - If the user mentions domestic violence, abuse by friends/family, substance abuse at home, or feeling unsafe, your FIRST reflex must always be to check their immediate physical safety:
+5. Safety First for Household Distress & Mental Health in Bangladesh:
+   - If the user mentions domestic violence, abuse, severe anxiety, or feeling unsafe, check their immediate physical safety first:
      'Are you in a safe place right now?'
-   - Offer genuine emotional grounding, validate their feelings without lecturing, and mention trusted support lines (e.g., in Bangladesh: emergency 999, Kaan Pete Roi mental health helpline 01779-554391 / 01779-554392).
+   - Offer genuine emotional grounding, validate their feelings without lecturing, and mention trusted Bangladeshi support lines:
+     * National Emergency Service: 999
+     * Kaan Pete Roi (Emotional & Suicide Helpline): 01779-554391 / 01779-554392
+     * National Mental Health Helpline: 16122
+     * Women & Children Helpline: 109
+     * National Info & Public Service: 333
 
-6. Live Web & Knowledge Search:
-   - You have access to the `search_web` tool to search Google, Wikipedia, and the web for live facts, current events, people, singers, songs, videos, and queries.
-   - When a user asks you about someone unfamiliar, asks you to search Google or YouTube, or asks for current information, proactively use the `search_web` tool to find accurate information.
+6. Live Web & Real-Time Search:
+   - You have access to the `search_web` tool to search Google, Wikipedia, and the web for live facts, Bangladesh news, weather, cricket scores, current events, and people.
+   - When asked about live information or someone unfamiliar, proactively execute the `search_web` tool to provide accurate answers.
 
-7. Appliance & Hardware Control:
-   - You have access to the `control_appliance` tool to switch physical lights, lamps, or fans on/off.
-   - When executing the tool, always accompany it with a brief, friendly verbal confirmation (e.g., 'I have turned on the desk light for you.').
+7. Appliance & Tabletop Robot Control:
+   - You have access to the `control_appliance` tool to toggle physical appliances (lights, fans) on/off. Accompany tool calls with brief verbal confirmations.
 
-8. Singing, Music & Media Playback:
-   - When the user asks to play a song, play music, or hear a specific track or artist (e.g. 'Play Shape of You', 'Play a song by Murtaza Kizilbash', 'Play some relaxing music'), execute the `play_song` tool immediately with the requested title.
-   - When the user asks to stop, pause, or silence the music (e.g. 'Stop music', 'Pause song', 'Quiet'), execute the `stop_music` tool immediately.
-   - When asked to hum, chant, or sing a nursery rhyme or lullaby in your own voice, you can playfully recite or hum short melodic rhymes naturally."""
+8. Music & Audio Playback:
+   - When asked to play a song, play music, or hear a track (e.g. 'Play a song by James', 'Play Shape of You'), execute `play_song` with the requested title.
+   - When asked to stop or pause music, execute `stop_music` immediately.
+   - When asked to hum or sing in your own voice, playfully hum or recite short melodic lines naturally.
+
+9. Turn Patience:
+   - Listen attentively and patiently to the user's thoughts without interrupting prematurely.
+
+10. Interactive Culinary & Recipe Assistant:
+   - You have deep culinary knowledge of authentic Bangladeshi cuisine (Shorshe Ilish, Kacchi Biryani, Bhuna Khichuri, Beef Rezala, Begun Bhorta, Dim Bhuna, Chotpoti, Payesh) as well as international dishes.
+   - Pantry & Leftover Cooking: If the user says they only have 3–4 items (e.g. 'I have eggs, onions, and potatoes' or 'I have tomatoes, bread, and cheese'), instantly suggest 1–2 creative, tasty dishes they can make, assuming household basics like oil, salt, and water.
+   - When asked for recipes, explain conversationally: mention the dish name and the quick approach in 1–2 warm sentences, then offer to guide them step-by-step as they cook."""
 
 
 async def run_live_assistant():
+    esp32_connected = esp32_bridge.connect()
+    mic_source = f"Physical INMP441 via ESP32-S3 ({esp32_bridge.port})" if esp32_connected else "Laptop Mic via SoundDevice"
+
     print("\n" + "═" * 60)
-    print("  🌸 MAYA: Gemini Live Voice Assistant (Laptop Prototype)")
+    print("  🌸 MAYA: Gemini Live Voice Assistant (ESP32 Robot + Laptop)")
     print("═" * 60)
     print(f"  🧠 Model      : {MODEL_ID}")
-    print(f"  🎙️ Microphone : 16 kHz Mono (Laptop Mic via SoundDevice)")
+    print(f"  🎙️ Microphone : 16 kHz Mono ({mic_source})")
     print(f"  🔊 Speaker    : 24 kHz Mono (Laptop Speaker via SoundDevice)")
     print(f"  ⚡ IoT Engine : 5V Appliance Relay Tool Active")
     print(f"  🌐 Web Search : Live DuckDuckGo + Wikipedia Tool Active")
@@ -339,40 +386,59 @@ async def run_live_assistant():
                 show_robot_expression("listening")
 
                 # Start audio hardware streams only after successful connection
-                input_stream.start()
+                if esp32_connected:
+                    esp32_bridge.start_audio_stream(input_queue, loop)
+                else:
+                    input_stream.start()
                 output_stream.start()
 
-                # Worker 1: Real-time Audio Stream with Instant Comfort Silence Endpointing
+                # Worker 1: Real-time Audio Stream with DC Filtering, Voice Gating & Natural S2S Cadence
                 async def send_audio_worker():
-                    try:
-                        silent_frame = b"\x00" * (CHUNK_SIZE * 2)
+                    silent_frame = b"\x00" * (CHUNK_SIZE * 2)
 
+                    try:
                         while True:
                             pcm_data = await input_queue.get()
-                            audio_arr = np.frombuffer(pcm_data, dtype=np.int16)
-                            rms = float(np.sqrt(np.mean(np.square(audio_arr.astype(np.float32)))))
+                            if len(pcm_data) < 2:
+                                continue
 
-                            # 1. Acoustic Echo Suppression when Maya is actively speaking
+                            audio_arr = np.frombuffer(pcm_data[: (len(pcm_data) // 2) * 2], dtype=np.int16)
+                            # Remove DC bias & normalize baseline
+                            audio_arr_f = audio_arr.astype(np.float32)
+                            audio_arr_f -= np.mean(audio_arr_f)
+
+                            # Apply gentle software boost for laptop internal microphone
+                            if not esp32_connected:
+                                audio_arr_f *= 1.8
+
+                            rms = float(np.sqrt(np.mean(np.square(audio_arr_f))))
+
+                            # 1. Smooth Turn Protection: While Maya is speaking, feed comfort silence
+                            # This completely prevents small noises, breathing, or speaker echo from interrupting Maya
                             if is_speaking:
-                                if rms < BARGE_IN_RMS_THRESHOLD:
-                                    # Send continuous zeroed frames so connection stays primed without echo loop
-                                    await session.send_realtime_input(
-                                        audio={"data": silent_frame, "mime_type": "audio/pcm"}
-                                    )
-                                    continue
-                                # User spoke loudly to interrupt (barge-in) -> forward real audio immediately
+                                await session.send_realtime_input(
+                                    audio=types.Blob(data=silent_frame, mime_type="audio/pcm;rate=16000")
+                                )
+                                continue
+
+                            clean_pcm = np.clip(audio_arr_f, -32768, 32767).astype(np.int16).tobytes()
 
                             # 2. Continuous Real-Time Audio Streaming:
-                            # If audio is above ambient noise floor (human speech), send live PCM.
-                            # If audio is ambient hiss/silence (< 160 RMS), send digital silence.
-                            # Result: Gemini's server-side VAD receives continuous 16kHz cadence and endpoints INSTANTLY (~300ms)!
+                            # Send comfort silence when quiet to keep Gemini's 16kHz audio clock synced.
+                            # Send live PCM when speech energy is detected.
                             if rms < RMS_VOICE_THRESHOLD:
                                 await session.send_realtime_input(
-                                    audio={"data": silent_frame, "mime_type": "audio/pcm"}
+                                    audio=types.Blob(data=silent_frame, mime_type="audio/pcm;rate=16000")
                                 )
                             else:
+                                # Live Voice Activity Feedback in Console
+                                bars = min(int(rms / 60), 12)
+                                bar_str = "█" * bars
+                                print(f"\r🎤 [VOICE LIVE] |{bar_str:<12}| Level: {int(rms):<5}", end="", flush=True)
+
+                                # Forward clean speech PCM to Gemini Live
                                 await session.send_realtime_input(
-                                    audio={"data": pcm_data, "mime_type": "audio/pcm"}
+                                    audio=types.Blob(data=clean_pcm, mime_type="audio/pcm;rate=16000")
                                 )
 
                     except asyncio.CancelledError:
@@ -418,28 +484,15 @@ async def run_live_assistant():
                                 if server_content is None:
                                     continue
 
-                                # B. Native Barge-In: User interrupted speech
+                                # B. Interruption Notification (Non-destructive to current sentence)
                                 if server_content.interrupted:
-                                    timestamp = time.strftime("%H:%M:%S")
-                                    if asst_text_buf.strip():
-                                        print(f"… [Interrupted]")
-                                        asst_text_buf = ""
-                                    print(f"\n🛑 [{timestamp}] [BARGE-IN] You spoke — listening to you...")
-                                    show_robot_expression("curious")
-
-                                    # Flush outbound playback queue
-                                    while not audio_out_queue.empty():
-                                        try:
-                                            audio_out_queue.get_nowait()
-                                        except asyncio.QueueEmpty:
-                                            break
-                                    is_speaking = False
                                     continue
 
                                 # C. Process generated audio chunks and model turn text
                                 if server_content.model_turn:
                                     for part in server_content.model_turn.parts:
                                         if part.inline_data:
+                                            is_speaking = True
                                             audio_out_queue.put_nowait(part.inline_data.data)
 
                                 # D. Process user speech transcription & Safety evaluation
@@ -447,6 +500,7 @@ async def run_live_assistant():
                                     u_chunk = server_content.input_transcription.text
                                     if u_chunk:
                                         user_text_buf += u_chunk
+                                        print(f"\r👤 You (hearing): {user_text_buf.strip()}  ", end="", flush=True)
 
                                 # E. Sentence-buffered Assistant Transcript Printing
                                 if server_content.output_transcription:
@@ -457,7 +511,7 @@ async def run_live_assistant():
                                             turn_counter += 1
                                             timestamp = time.strftime("%H:%M:%S")
                                             clean_user = user_text_buf.strip()
-                                            print(f"\n[{timestamp} | Turn {turn_counter}] 👤 You: {clean_user}")
+                                            print(f"\r[{timestamp} | Turn {turn_counter}] 👤 You: {clean_user}                  \n")
                                             user_text_buf = ""
 
                                             # Targeted Crisis Guardrail Evaluation
@@ -487,7 +541,14 @@ async def run_live_assistant():
                                                 break
 
                                 # F. Turn Complete: Flush remaining text & Reset to listening
-                                if server_content.turn_complete:
+                                if server_content.turn_complete or getattr(server_content, "generation_complete", False):
+                                    if user_text_buf.strip():
+                                        turn_counter += 1
+                                        timestamp = time.strftime("%H:%M:%S")
+                                        clean_user = user_text_buf.strip()
+                                        print(f"\r[{timestamp} | Turn {turn_counter}] 👤 You: {clean_user}                  \n")
+                                        user_text_buf = ""
+
                                     # Print any remaining trailing text in the buffer
                                     if asst_text_buf.strip():
                                         timestamp = time.strftime("%H:%M:%S")
@@ -517,7 +578,8 @@ async def run_live_assistant():
                                 print(f"\n⚠️ [AUDIO OUTPUT ERROR] {ex}")
 
                             if audio_out_queue.empty():
-                                await asyncio.sleep(0.08)
+                                # Allow acoustic echo and laptop speaker reverberation to dissipate fully
+                                await asyncio.sleep(0.35)
                                 if audio_out_queue.empty():
                                     is_speaking = False
 
@@ -547,6 +609,8 @@ async def run_live_assistant():
                 print(f"\n❌ [ERROR] {e}")
                 break
         finally:
+            if esp32_connected:
+                esp32_bridge.close()
             try:
                 if input_stream.active:
                     input_stream.stop()

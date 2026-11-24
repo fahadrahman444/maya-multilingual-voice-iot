@@ -16,6 +16,7 @@ ENV/
 .idea/
 *.swp
 *~
+*.bak
 
 # Operating System
 .DS_Store
